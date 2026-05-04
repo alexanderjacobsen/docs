@@ -1,0 +1,111 @@
+---
+title: "useMantlTools"
+description: "Register tools that follow the React component lifecycle."
+---
+
+Use `useMantlTools` to register tools that depend on a specific page or component's state. Tools registered this way are added when the component mounts and removed when it unmounts, so they can close over local state, props, and refs cleanly.
+
+## Usage
+
+```tsx
+import { useMantlTools } from "@mantl/react";
+import { z } from "zod";
+
+function ProductsPage() {
+  const [filter, setFilter] = useState<"all" | "active" | "sold">("all");
+
+  useMantlTools({
+    setProductFilter: {
+      description: "Filter the product list by status",
+      parameters: z.object({
+        status: z.enum(["all", "active", "sold"]),
+      }),
+      execute: ({ status }) => {
+        setFilter(status);
+        return { newFilter: status };
+      },
+    },
+  });
+
+  return <ProductList filter={filter} />;
+}
+```
+
+While `ProductsPage` is mounted, the AI sees `setProductFilter` as an available tool. When the user navigates away, it's automatically unregistered.
+
+## How merging works
+
+Tools registered via `useMantlTools` are merged with whatever tools you passed to the `MantlProvider`'s `tools` prop. If two definitions use the same tool name, the dynamic one (from `useMantlTools`) wins.
+
+```tsx
+<MantlProvider
+  tools={{
+    navigateTo,         // app-wide
+    searchProducts,     // app-wide
+  }}
+>
+  <ProductsPage />      {/* adds setProductFilter */}
+</MantlProvider>
+
+// AI sees: navigateTo, searchProducts, setProductFilter
+```
+
+## Multiple components, multiple tool sets
+
+Each call to `useMantlTools` is keyed by an internally-generated id, so multiple components can each register their own tools without conflict. Different pages contribute different tools — the AI's available toolset reflects what's actually on screen.
+
+```tsx
+// Inside FilterBar
+useMantlTools({
+  setFilter: { /* ... */ },
+});
+
+// Inside ProductDetail (sibling component)
+useMantlTools({
+  addToCart: { /* ... */ },
+  saveForLater: { /* ... */ },
+});
+```
+
+Both components mount → AI sees `setFilter`, `addToCart`, `saveForLater` plus any global tools. Either unmounts → its contributions disappear.
+
+## Stale-closure caveat
+
+The tool's `execute` is captured at registration time, just like any callback. If your tool references frequently-changing state directly, wrap it in a ref or pass dependencies through React's normal mechanisms:
+
+```tsx
+// Bad — execute captures the initial filter and stays stale
+const [filter, setFilter] = useState("all");
+useMantlTools({
+  getCurrentFilter: {
+    description: "Get the current filter",
+    parameters: z.object({}),
+    execute: () => filter,   // stale!
+  },
+});
+
+// Good — ref is always current
+const filterRef = useRef(filter);
+filterRef.current = filter;
+useMantlTools({
+  getCurrentFilter: {
+    description: "Get the current filter",
+    parameters: z.object({}),
+    execute: () => filterRef.current,
+  },
+});
+```
+
+Mantl re-runs the registration effect whenever the tools object changes, so if you don't memoize a tool, it'll re-register on every render — fine for correctness, but slightly wasteful. For frequently-rendering components, wrap your tool definitions in `useMemo`:
+
+```tsx
+const tools = useMemo(() => ({
+  setFilter: {
+    description: "Filter products",
+    parameters: z.object({ status: z.enum(["all", "active"]) }),
+    execute: ({ status }) => setFilter(status),
+  },
+}), []);
+
+useMantlTools(tools);
+```

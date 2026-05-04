@@ -1,0 +1,60 @@
+---
+title: "Example Prompts"
+description: "Suggest starter prompts in the empty chat state."
+---
+
+When the user opens an empty chat, the sidebar can show suggested prompts as buttons. Clicking a button submits that prompt as if the user typed and sent it. They're how a new user discovers what your assistant can actually do.
+
+## Setup
+
+Pass `examplePrompts` to the provider:
+
+```tsx
+<MantlProvider
+  tokenUrl="/api/token"
+  examplePrompts={[
+    { label: "Show me all orders" },
+    { label: "Create a test order", prompt: "Create a new order for John Doe, product: Laptop Stand, amount: $89.99" },
+    { label: "What's my revenue this month?", prompt: "Get all orders and calculate the total revenue from non-cancelled orders" },
+  ]}
+>
+  ...
+</MantlProvider>
+```
+
+## The shape
+
+<ResponseField name="label" type="string" required>
+  The text on the button. Should fit on one or two lines.
+</ResponseField>
+
+<ResponseField name="prompt" type="string">
+  The actual text sent to the AI when the button is clicked. If omitted, the `label` is used as the prompt.
+</ResponseField>
+
+The split between `label` and `prompt` lets you show a short, snappy button while sending a more detailed prompt to the AI.
+
+## When they show
+
+Example prompts appear when:
+- The user opens a brand-new chat (no messages yet).
+- The user clicks "New chat" and the resulting empty draft appears.
+
+They disappear as soon as the conversation has any messages.
+
+## Tips
+
+- **3-5 prompts is the sweet spot.** More feels overwhelming; fewer feels sparse.
+- **Cover different categories.** A "read" example, a "create" example, an "ask a question" example. Show users the breadth of what the AI can do.
+- **Show real value.** "Hello" is a wasted prompt. "Find duplicate orders from last week" is something a user might actually want.
+- **Use action verbs.** "Show me…", "Create a…", "Calculate…". Easier to scan than declarative phrasing.
+- **Match your tools.** If you have a `searchOrders` tool, an example like "Search orders by customer name" hints at it without explaining it.
+
+## Per-page suggestions
+
+`examplePrompts` is set on the provider, so the same suggestions show across all pages by default. If you want per-page suggestions (e.g. different prompts when the user opens chat from the orders page vs. the customers page), you can build that yourself by passing a different value based on the route:
+
+```tsx
+const prompts = useExamplePromptsForRoute();
+return <MantlProvider tokenUrl="..." examplePrompts={prompts}>...</MantlProvider>;
+```

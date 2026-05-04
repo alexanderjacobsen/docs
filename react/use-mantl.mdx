@@ -1,0 +1,180 @@
+---
+title: "useMantl"
+description: "Access chat-level state and methods from any component."
+---
+
+`useMantl` gives you the conversation list, sidebar open/closed state, user preferences, and methods to manipulate them. Use it to build custom triggers (e.g. "Ask AI" button in your nav bar) or to read the current conversation in your own UI.
+
+## Usage
+
+```tsx
+import { useMantl } from "@mantl/react";
+
+function MyComponent() {
+  const {
+    isSidebarOpen,
+    openSidebar,
+    closeSidebar,
+    conversations,
+    currentConversationId,
+  } = useMantl();
+
+  return (
+    <button onClick={openSidebar}>
+      {isSidebarOpen ? "Chat is open" : "Open chat"}
+    </button>
+  );
+}
+```
+
+Must be called inside a `MantlProvider`.
+
+## Return value
+
+### Sidebar state
+
+<ResponseField name="isSidebarOpen" type="boolean">
+  Whether the sidebar is currently open.
+</ResponseField>
+
+<ResponseField name="openSidebar" type="() => void">
+  Open the sidebar (and persist the user's preference).
+</ResponseField>
+
+<ResponseField name="closeSidebar" type="() => void">
+  Close the sidebar.
+</ResponseField>
+
+<ResponseField name="toggleSidebar" type="() => void">
+  Flip the sidebar's state.
+</ResponseField>
+
+### Conversations
+
+<ResponseField name="conversations" type="Conversation[]">
+  All of the current user's conversations, newest first. Each entry has `id`, `title`, `created_at`, `updated_at`.
+</ResponseField>
+
+<ResponseField name="currentConversationId" type="string | null">
+  The id of the conversation currently displayed in the sidebar.
+</ResponseField>
+
+<ResponseField name="isDraft" type="boolean">
+  True when the current conversation is a placeholder (no messages sent yet). Becomes false on first user submission.
+</ResponseField>
+
+<ResponseField name="isLoadingConversations" type="boolean">
+  True while the SDK is fetching the conversation list on initial mount.
+</ResponseField>
+
+<ResponseField name="createConversation" type="() => Promise<Conversation | null>">
+  Create a new chat (i.e. switch to the draft conversation).
+</ResponseField>
+
+<ResponseField name="selectConversation" type="(id: string) => void">
+  Switch the sidebar to display a different conversation.
+</ResponseField>
+
+<ResponseField name="deleteConversation" type="(id: string) => Promise<void>">
+  Delete a conversation. If you delete the active one, the SDK switches to the next available conversation or creates a fresh draft.
+</ResponseField>
+
+<ResponseField name="renameConversation" type="(id: string, title: string) => Promise<void>">
+  Rename a conversation.
+</ResponseField>
+
+### Auth
+
+<ResponseField name="userId" type="string">
+  The user id extracted from the JWT's `sub` claim.
+</ResponseField>
+
+<ResponseField name="token" type="string | undefined">
+  The current JWT, if you need to make authenticated requests of your own to the Mantl backend.
+</ResponseField>
+
+<ResponseField name="tokenError" type="string | null">
+  Error message from the most recent failed token fetch. Use this to render a "couldn't authenticate" UI.
+</ResponseField>
+
+### Preferences
+
+<ResponseField name="preferences" type="Record<string, string>">
+  All persisted user preferences. Mantl uses this internally for things like `sidebar_open`, `last_conversation_id`. You can read/write your own keys too.
+</ResponseField>
+
+<ResponseField name="setPreference" type="(key: string, value: string) => Promise<void>">
+  Persist a preference. Synced to the backend.
+</ResponseField>
+
+### Tools
+
+<ResponseField name="allTools" type="ClientTools">
+  The merged set of static (provider) and dynamic (`useMantlTools`) tools currently registered.
+</ResponseField>
+
+<ResponseField name="registerTools" type="(id: string, tools: ClientTools) => void">
+  Imperative tool registration. Most consumers should use [`useMantlTools`](/react/use-mantl-tools) instead.
+</ResponseField>
+
+<ResponseField name="unregisterTools" type="(id: string) => void">
+  Remove dynamically registered tools.
+</ResponseField>
+
+## Examples
+
+### Custom launcher in your nav
+
+```tsx
+import { useMantl } from "@mantl/react";
+import { Sparkles } from "lucide-react";
+
+function NavBar() {
+  const { toggleSidebar, isSidebarOpen } = useMantl();
+  return (
+    <button onClick={toggleSidebar}>
+      <Sparkles /> {isSidebarOpen ? "Hide chat" : "Ask AI"}
+    </button>
+  );
+}
+```
+
+### Show "Ask AI about this page" with context
+
+```tsx
+import { useMantl, useMantlContext } from "@mantl/react";
+
+function ProductPage({ product }) {
+  const { openSidebar } = useMantl();
+  useMantlContext(`Currently viewing product: ${product.name} (id: ${product.id})`);
+
+  return (
+    <button onClick={openSidebar}>
+      Ask AI about {product.name}
+    </button>
+  );
+}
+```
+
+The next user message will include the context from `useMantlContext` so the AI knows what they're looking at.
+
+### Render a conversation list elsewhere
+
+```tsx
+function MyConversationList() {
+  const { conversations, selectConversation, currentConversationId } = useMantl();
+  return (
+    <ul>
+      {conversations.map((c) => (
+        <li
+          key={c.id}
+          onClick={() => selectConversation(c.id)}
+          aria-current={c.id === currentConversationId}
+        >
+          {c.title}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```

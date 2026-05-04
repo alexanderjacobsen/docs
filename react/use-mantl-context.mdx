@@ -1,0 +1,72 @@
+---
+title: "useMantlContext"
+description: "Inject page-specific context into the next user message."
+---
+
+`useMantlContext` lets you attach a small piece of context to a page or component. Whatever string you pass becomes part of the next user prompt the AI sees, automatically, so the assistant knows what the user is currently looking at.
+
+## Usage
+
+```tsx
+import { useMantlContext } from "@mantl/react";
+
+function ProductPage({ product }) {
+  useMantlContext(
+    `User is viewing product: ${product.name} (id: ${product.id}, price: $${product.price})`
+  );
+
+  return <ProductDetails product={product} />;
+}
+```
+
+When the user opens the chat from this page and says "How much is this?", the AI sees both the user's message *and* the context about which product they're looking at, so it can answer specifically.
+
+## How it's delivered
+
+Context is injected as a `<context>...</context>` block at the top of the next user message before it's sent to the model. The user doesn't see the context in their message bubble; it's invisible to the chat UI but available to the AI.
+
+The context is only attached to the *next* message — once that message has been sent, subsequent messages don't repeat the context unless the value of `useMantlContext` is still active (i.e. you're still on the same page).
+
+## When context updates
+
+Each call to `useMantlContext` overwrites the previous value. If you're on a product page and the product changes (user switches via tabs or filtering), pass the new value:
+
+```tsx
+function ProductPage({ product }) {
+  useMantlContext(`Viewing: ${product.name}`);
+  return <ProductDetails product={product} />;
+}
+```
+
+When `product` changes, the context for the next message updates accordingly.
+
+## Combining with tools
+
+Context is great for *passive* awareness ("what page am I on"). For active interactions, register tools so the AI can do things, not just know things.
+
+```tsx
+function ProductPage({ product }) {
+  // Context: tells the AI what's on screen
+  useMantlContext(`Viewing product: ${product.name} (id: ${product.id})`);
+
+  // Tools: let the AI take action
+  useMantlTools({
+    addToCart: {
+      description: "Add the current product to the cart",
+      parameters: z.object({}),
+      execute: () => addToCart(product.id),
+    },
+  });
+
+  return <ProductDetails product={product} />;
+}
+```
+
+Now the user can say "add this to my cart" and the AI knows what "this" refers to (from context) *and* has a tool to do it.
+
+## Tips
+
+- **Keep context short.** Long context blocks bloat every prompt and waste tokens. Aim for a one-liner.
+- **Be specific.** "On product page" is less useful than "Viewing product: Wireless Headphones (id: ord-001, $79.99)".
+- **Include identifiers.** If your tools take IDs as input, put the IDs in the context so the AI can pass them through.
+- **Don't use context for sensitive data.** Anything in context goes to the LLM provider. Don't include secrets, PII, etc.

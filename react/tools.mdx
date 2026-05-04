@@ -1,0 +1,169 @@
+---
+title: "Defining Tools"
+description: "Give the AI functions it can call to do real work in your app."
+---
+
+Tools are the heart of Mantl. They turn the chat from "Q&A" into "an assistant that can actually navigate, search, mutate, and read state." A tool is a function the AI decides to call when it judges it useful for the user's request.
+
+## Anatomy of a tool
+
+```tsx
+import { z } from "zod";
+
+const navigateTo = {
+  description: "Navigate the user to a page in the app",
+  parameters: z.object({
+    path: z.string().describe("The path to navigate to, e.g. /orders/42"),
+  }),
+  execute: async ({ path }: { path: string }) => {
+    window.location.href = path;
+    return { success: true };
+  },
+};
+```
+
+Three parts:
+
+- **`description`** — natural-language explanation of what the tool does. The model uses this to decide when to call it. Be specific.
+- **`parameters`** — a [Zod](https://zod.dev) schema or plain JSON Schema describing the tool's input. Each field can have a `.describe()` to give the model more context.
+- **`execute`** — the function that actually runs in the browser when the AI calls the tool. Receives the validated input, returns whatever the AI should see.
+
+## Registering tools
+
+There are two ways to register tools.
+
+### Globally on the provider
+
+For tools available everywhere in your app:
+
+```tsx
+<MantlProvider
+  tokenUrl="/api/token"
+  tools={{
+    navigateTo,
+    searchProducts,
+    getCurrentUser,
+  }}
+>
+  ...
+</MantlProvider>
+```
+
+### Locally with `useMantlTools`
+
+For tools that depend on a specific page's state (e.g. a list filter, an open modal), register them from inside the relevant component. They're added when the component mounts and removed when it unmounts.
+
+```tsx
+import { useMantlTools } from "@mantl/react";
+
+function ProductsPage() {
+  const [filter, setFilter] = useState("all");
+
+  useMantlTools({
+    setProductFilter: {
+      description: "Filter the product list by status",
+      parameters: z.object({
+        status: z.enum(["all", "active", "sold-out"]),
+      }),
+      execute: ({ status }) => {
+        setFilter(status);
+        return { newFilter: status };
+      },
+    },
+  });
+
+  return <ProductList filter={filter} />;
+}
+```
+
+The two sets are merged. If the user is on the products page, the AI sees both global tools and the local `setProductFilter`.
+
+## Returning data from a tool
+
+Whatever your `execute` returns becomes the model's view of the result. Return structured data — JSON, arrays, objects — when you want the model to reason about it:
+
+```tsx
+const getOrders = {
+  description: "Get all orders for the current user",
+  parameters: z.object({}),
+  execute: async () => {
+    const orders = await fetch("/api/orders").then((r) => r.json());
+    return orders;
+  },
+};
+```
+
+The model sees the JSON and can summarize, filter, count, etc.
+
+If your tool just performs an action (navigate, mutate, dismiss), return a small acknowledgement object so the model knows it succeeded:
+
+```tsx
+return { success: true };
+```
+
+## Errors
+
+If your `execute` throws, Mantl catches it and reports the error to the model as a regular result, so the model can react ("Sorry, I couldn't fetch your orders — would you like me to try again?"). You don't need a try/catch unless you want a custom error message:
+
+```tsx
+execute: async ({ id }) => {
+  try {
+    return await deleteOrder(id);
+  } catch (err) {
+    return { success: false, message: "Order not found" };
+  }
+}
+```
+
+## Confirmation flow
+
+Some tools should ask the user before running — destructive actions, payments, anything sensitive. Add `requiresConfirmation: true`:
+
+```tsx
+const deleteOrder = {
+  description: "Delete an order by ID",
+  parameters: z.object({ id: z.string() }),
+  requiresConfirmation: true,
+  execute: async ({ id }) => {
+    await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    return { deleted: id };
+  },
+};
+```
+
+The user will see an "Approve / Deny" prompt in the chat before the tool runs. See [Confirmation flow](/react/confirmation) for details.
+
+## Schema choices
+
+Mantl accepts both Zod schemas and plain JSON Schema for `parameters`.
+
+<CodeGroup>
+```tsx Zod
+import { z } from "zod";
+
+parameters: z.object({
+  query: z.string().describe("Search query"),
+  limit: z.number().int().min(1).max(100).default(10),
+})
+```
+
+```ts JSON Schema
+parameters: {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "Search query" },
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+  },
+  required: ["query"],
+}
+```
+</CodeGroup>
+
+Zod is recommended — it gives you TypeScript inference for the `execute` argument for free, plus runtime validation before your code runs.
+
+## Tips for good tools
+
+- **Be specific in descriptions.** "Get user's data" is bad; "Fetch the current user's recent orders, last 30 days" is good.
+- **Use `.describe()` on every parameter.** It's how the AI knows what each field means.
+- **Return small, focused payloads.** Don't dump 500 rows when 10 will do — the model will use them all in context.
+- **Make tools idempotent where possible.** The AI may retry. A `createOrder` that creates duplicates on retry is bad; one that requires an idempotency key is good.

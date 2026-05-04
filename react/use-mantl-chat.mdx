@@ -1,0 +1,144 @@
+---
+title: "useMantlChat"
+description: "Direct access to the chat — messages, streaming state, send and stop."
+---
+
+`useMantlChat` is the lower-level hook the built-in `MantlSidebar` uses internally. Use it when you want to build a different chat UI on top of Mantl's state — e.g. a full-screen layout, an inline chat widget, or a different message rendering style.
+
+## Usage
+
+```tsx
+import { useMantlChat } from "@mantl/react";
+
+function MyChat() {
+  const chat = useMantlChat();
+
+  return (
+    <>
+      {chat.messages.map((m) => (
+        <div key={m.id}>{m.role}: {/* render parts */}</div>
+      ))}
+      <input onKeyDown={(e) => {
+        if (e.key === "Enter") chat.sendMessage(e.currentTarget.value);
+      }} />
+    </>
+  );
+}
+```
+
+Must be called inside a `MantlProvider`.
+
+## Return value
+
+### Messages
+
+<ResponseField name="messages" type="UIMessage[]">
+  The full conversation, including user and assistant turns. Each message has `id`, `role`, and `parts` (text, tool calls, reasoning, etc.). Same shape as the AI SDK's `UIMessage`.
+</ResponseField>
+
+<ResponseField name="flatParts" type="FlatPart[]">
+  A pre-flattened, deduplicated view of the messages, ready to render as a list. Each part has a stable `key`, the part's `type`, the original `part` object, and an `isStreaming` flag for live updates.
+</ResponseField>
+
+### Loading state
+
+<ResponseField name="status" type='"ready" | "submitted" | "streaming" | "error"'>
+  Raw chat status from the underlying SDK.
+</ResponseField>
+
+<ResponseField name="isLoading" type="boolean">
+  True whenever the agent is doing work for the user — submitted, streaming, tool continuation, or queued. Use this to disable your input while a turn is in progress.
+</ResponseField>
+
+<ResponseField name="isStreaming" type="boolean">
+  True specifically while assistant content is streaming.
+</ResponseField>
+
+<ResponseField name="isToolContinuation" type="boolean">
+  True between a client tool's result being delivered and the continuation stream starting. Useful if you want to show a different indicator during this phase.
+</ResponseField>
+
+<ResponseField name="showTypingIndicator" type="boolean">
+  True when you should show a "thinking..." dot — i.e. user just sent, no response chunks yet.
+</ResponseField>
+
+<ResponseField name="hasPendingConfirmation" type="boolean">
+  True when a tool with `requiresConfirmation` is awaiting the user's approve/deny.
+</ResponseField>
+
+<ResponseField name="error" type="Error | undefined">
+  The error from the most recent failed turn, if any.
+</ResponseField>
+
+### Actions
+
+<ResponseField name="sendMessage" type="(text: string) => void">
+  Send a message as the current user. Handles draft promotion and context injection automatically.
+</ResponseField>
+
+<ResponseField name="stop" type="() => void">
+  Stop the current streaming response.
+</ResponseField>
+
+<ResponseField name="addToolOutput" type="(opts: { toolCallId: string; output: unknown }) => void">
+  Manually deliver a tool result. Most apps don't need this — `useMantlTools` handles it for you.
+</ResponseField>
+
+<ResponseField name="addToolApprovalResponse" type="(opts: { toolCallId: string; approved: boolean }) => void">
+  Approve or deny a confirmation-gated tool call. Used by the built-in approval UI; you'd call it directly only when building a custom approval card.
+</ResponseField>
+
+<ResponseField name="clearHistory" type="() => void">
+  Clear the current conversation's messages.
+</ResponseField>
+
+## Building a custom chat UI
+
+```tsx
+import { useMantlChat, MantlProvider } from "@mantl/react";
+
+function CustomChat() {
+  const chat = useMantlChat();
+  const [input, setInput] = useState("");
+
+  const submit = () => {
+    if (!input.trim() || chat.isLoading) return;
+    chat.sendMessage(input);
+    setInput("");
+  };
+
+  return (
+    <div className="my-chat">
+      <div className="messages">
+        {chat.flatParts.map((part) => (
+          <MyMessagePart key={part.key} flatPart={part} />
+        ))}
+        {chat.showTypingIndicator && <Spinner />}
+      </div>
+
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        disabled={chat.hasPendingConfirmation}
+      />
+
+      {chat.isLoading ? (
+        <button onClick={chat.stop}>Stop</button>
+      ) : (
+        <button onClick={submit} disabled={!input.trim()}>Send</button>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <MantlProvider tokenUrl="/api/token">
+      <CustomChat />
+    </MantlProvider>
+  );
+}
+```
+
+You can mix and match — `MantlSidebar` for the floating widget, `useMantlChat` for an inline view of the same conversation, both backed by the same provider.

@@ -1,0 +1,99 @@
+---
+title: "Authentication"
+description: "How Mantl identifies users and protects your project's secret."
+---
+
+Mantl uses **short-lived JWTs** to authenticate the SDK against the hosted backend. Your project's secret key never leaves your server; the SDK only sees signed tokens.
+
+## The flow
+
+<Steps>
+  <Step title="Project creation">
+    You create a project in the dashboard and get a secret key (`sk_proj_<projectId>_<secret>`). The secret is shown once — store it as an env var on your server.
+  </Step>
+  <Step title="Token generation (your server)">
+    When the SDK needs a token, your server signs a JWT with claims `{ sub: userId, proj: projectId }` using the secret as the HMAC key, with a short expiry (e.g. 24h).
+  </Step>
+  <Step title="Token delivery (the SDK)">
+    The SDK fetches the token via your `tokenUrl` (or `getToken` callback), caches it, and uses it in `Authorization: Bearer <token>` headers when calling the Mantl backend.
+  </Step>
+  <Step title="Verification (the backend)">
+    The backend looks up the project's secret from KV, verifies the JWT signature, and uses the `sub` claim as the user identity for scoping conversations and preferences.
+  </Step>
+  <Step title="Refresh">
+    The SDK auto-refreshes one minute before expiry. If the user's tab was asleep, it re-fetches on visibility change.
+  </Step>
+</Steps>
+
+## Why this design
+
+- **Your server is the only place the secret lives.** Compromise the SDK or a user's browser, the secret is unreachable.
+- **Tokens are scoped per user.** The `sub` claim ties every chat action to a user identity. Server-side, conversations and preferences live under that user only.
+- **Tokens are short-lived.** A leaked token is a 24-hour problem at worst. Reissuing is cheap.
+- **No long-lived state on the SDK.** The SDK fetches a fresh token whenever needed; your server owns who can get one.
+
+## Three ways to deliver the token
+
+### 1. `tokenUrl` (most common)
+
+A URL the SDK fetches with `credentials: "include"`. The endpoint should respond with `{ token: "..." }`. Most apps use this — your existing session cookie authorizes the user, your route signs the JWT.
+
+```tsx
+<MantlProvider tokenUrl="/api/mantl-token">
+  ...
+</MantlProvider>
+```
+
+See [the token endpoint guide](/react/token-endpoint) for the route implementation.
+
+### 2. `getToken` (custom fetcher)
+
+A callback the SDK calls. Use this when you need to set custom headers, fetch from a different origin, or integrate with a more complex auth flow.
+
+```tsx
+<MantlProvider
+  getToken={async () => {
+    const res = await fetch("https://auth.example.com/mantl-token", {
+      headers: { "X-API-Key": process.env.NEXT_PUBLIC_API_KEY },
+    });
+    const { token } = await res.json();
+    return token;
+  }}
+>
+  ...
+</MantlProvider>
+```
+
+### 3. `token` (pre-fetched)
+
+A token you already have. Useful for SSR — fetch the token on the server during the first render and pass it as a prop, avoiding a client-side round-trip.
+
+```tsx
+// app/layout.tsx (server component)
+const token = await fetchToken();
+return <MantlProvider token={token}>{children}</MantlProvider>;
+```
+
+The SDK won't auto-refresh in this mode (it doesn't know how to refetch), so use `tokenUrl` or `getToken` for long-running sessions.
+
+## Multi-tenant scoping
+
+The token's `sub` claim is your application's user identity. Mantl uses it as the *only* thing scoping conversations:
+
+- User A opens the chat → conversations scoped to user A.
+- User A logs out, user B logs in → token has `sub: B`, conversations scoped to B.
+- User A logs back in → token has `sub: A` again, original conversations come back.
+
+If you change the `sub` for the same person across sessions (e.g. you reissue user IDs), their chat history won't carry over. Use a stable identifier — UUID, email, whatever your auth system gives you.
+
+## Token errors
+
+If the token fetch fails (network error, 401 from your endpoint, malformed response), the chat shows an "Authentication failed" message instead of the message list. You can read the error message via `useMantl().tokenError`:
+
+```tsx
+function MaybeShowChat() {
+  const { tokenError } = useMantl();
+  if (tokenError) return <p>Couldn't load chat: {tokenError}</p>;
+  return <MantlSidebar />;
+}
+```

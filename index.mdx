@@ -1,133 +1,49 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Mantl"
+description: "An embeddable AI chat sidebar for your web app, powered by your own tools."
+icon: "sparkles"
 ---
 
-## Setting up
+Mantl is a drop-in chat sidebar that gives users an AI assistant inside your product. The assistant can call tools you define in your own code — read state, mutate state, navigate, fetch from your API — so it does real work rather than just answering questions.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the chat running in your React app in five minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Tools" icon="wrench" href="/react/tools">
+    Define tools the AI can call to interact with your app.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Theming" icon="palette" href="/react/theming">
+    Make the chat match your brand with CSS variables.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Hooks" icon="code" href="/react/use-mantl">
+    Build custom UI on top of Mantl's chat state.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+Mantl is split between a small SDK that runs in your app and a hosted backend that handles model calls, conversation persistence, and tool routing.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="The SDK">
+    `@mantl/react` provides a `MantlProvider` and a `MantlSidebar` component. Drop them into your app, register your tools, done.
+  </Step>
+  <Step title="Authentication">
+    Your server signs short-lived JWTs using your project's secret key. The SDK fetches one when it mounts and uses it to authenticate against the hosted backend.
+  </Step>
+  <Step title="The hosted backend">
+    The backend talks to your chosen LLM provider (OpenAI, Anthropic, Google, etc.), persists conversations, and orchestrates tool calls.
+  </Step>
+  <Step title="Your tools">
+    When the AI decides to call a tool, the SDK invokes your local function in the browser, sends the result back, and the model continues.
+  </Step>
+</Steps>
 
-## Make your content agent ready
+## Why Mantl
 
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+- **Tools that actually do things.** The AI doesn't just answer — it can navigate, mutate state, hit your APIs.
+- **Conversation history per user.** Built in. Users come back, their chats are still there.
+- **Model-agnostic.** Configure OpenAI, Anthropic, Google, or others per-project. Switch without code changes.
+- **Themable to fit your product.** A handful of CSS variables let you blend the chat into your existing UI.
+- **Type-safe.** Tools accept Zod or JSON Schema; inputs are validated before your code runs.

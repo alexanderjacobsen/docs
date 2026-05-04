@@ -1,0 +1,69 @@
+---
+title: "Confirmation Flow"
+description: "Require user approval before destructive or sensitive tools run."
+---
+
+Some tools shouldn't run automatically. Deleting data, making payments, sending messages on the user's behalf — these warrant explicit consent. Mantl supports a built-in approval flow: the AI proposes the tool call, the user clicks Approve or Deny, and only then does your `execute` run (or get skipped).
+
+## Marking a tool
+
+Add `requiresConfirmation: true` to the tool definition:
+
+```tsx
+const deleteOrder = {
+  description: "Delete an order by ID",
+  parameters: z.object({ id: z.string() }),
+  requiresConfirmation: true,
+  execute: async ({ id }) => {
+    await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    return { deleted: id };
+  },
+};
+```
+
+That's all. When the AI calls this tool, the chat UI shows an approval card with the tool name and arguments, and two buttons.
+
+<Frame>
+  <img src="/images/confirmation-flow.png" alt="Approval prompt example" />
+</Frame>
+
+## What happens on each path
+
+**Approve** → your `execute` runs with the validated input. The result is sent back to the AI, which continues its turn.
+
+**Deny** → your `execute` is skipped. The AI sees a denial signal and typically responds with something like "Okay, I won't delete that order" rather than retrying immediately.
+
+Either way, the chat input is disabled while a confirmation is pending — the user has to resolve the prompt before sending another message.
+
+## Customizing the approval UI
+
+The default UI shows the tool name and a JSON view of the arguments. If you want richer cards (e.g. "Delete order #42 — Wireless Headphones, $79.99"), provide a `formatInput` function:
+
+```tsx
+const deleteOrder = {
+  description: "Delete an order by ID",
+  parameters: z.object({ id: z.string() }),
+  requiresConfirmation: true,
+  formatInput: ({ id }) => `Delete order #${id}?`,
+  execute: async ({ id }) => { /* ... */ },
+};
+```
+
+`formatInput` returns a string used as the prompt headline. For a fully custom card, render your own UI from [`useMantlChat`](/react/use-mantl-chat) and gate it on `chat.hasPendingConfirmation`.
+
+## When to require confirmation
+
+Good candidates:
+
+- Anything that costs money (payments, subscriptions, API calls with rate-limited budgets).
+- Destructive actions (delete, archive, cancel).
+- Outbound messages on the user's behalf (email, Slack, SMS).
+- Anything irreversible.
+
+Bad candidates (would just annoy the user):
+
+- Read-only fetches (`getOrders`, `searchProducts`).
+- UI navigation (`navigateTo`).
+- Filter changes that the user can easily undo.
+
+Err on the side of *not* asking — every confirmation friction reduces the AI's perceived helpfulness. Use it for the genuine "are you sure?" cases.

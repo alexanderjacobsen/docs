@@ -1,0 +1,80 @@
+---
+title: "MantlSidebar"
+description: "The chat sidebar UI — header, conversation history, message list, input."
+---
+
+`MantlSidebar` renders the full chat UI. It manages its own open/closed state (persisted as a user preference) and shows a floating launcher button when closed.
+
+## Usage
+
+```tsx
+import { MantlProvider, MantlSidebar } from "@mantl/react";
+
+<MantlProvider tokenUrl="/api/token">
+  <main>{/* your app */}</main>
+  <MantlSidebar position="right" />
+</MantlProvider>
+```
+
+## Props
+
+<ResponseField name="position" type='"left" | "right"' default='"right"'>
+  Which side of the viewport the sidebar slides in from.
+</ResponseField>
+
+<ResponseField name="defaultOpen" type="boolean" default="false">
+  First-visit fallback. If a user has no saved sidebar preference yet and `defaultOpen` is true, the sidebar opens once. After they interact (open/close), their preference takes over and `defaultOpen` is ignored.
+</ResponseField>
+
+<ResponseField name="showLauncher" type="boolean" default="true">
+  Whether to render the floating launcher button. Set to `false` if you want to wire your own UI to open the sidebar — see below.
+</ResponseField>
+
+## Custom launcher
+
+The built-in launcher is a sparkle button in the bottom corner. To open the sidebar from your own UI (e.g. a button in your nav bar), disable the built-in launcher and use [`useMantl`](/react/use-mantl):
+
+```tsx
+import { useMantl, MantlSidebar } from "@mantl/react";
+
+function NavBar() {
+  const { openSidebar, isSidebarOpen } = useMantl();
+  return (
+    <button onClick={openSidebar} disabled={isSidebarOpen}>
+      Ask AI
+    </button>
+  );
+}
+
+function App() {
+  return (
+    <MantlProvider tokenUrl="/api/token">
+      <NavBar />
+      <main>...</main>
+      <MantlSidebar showLauncher={false} />
+    </MantlProvider>
+  );
+}
+```
+
+The provider exposes `openSidebar`, `closeSidebar`, `toggleSidebar`, and `isSidebarOpen` for any custom trigger you need.
+
+## Resizing
+
+Users can drag the sidebar's left edge to resize it between 340px and 700px. The width is *not* persisted — each session starts at the default width.
+
+## What's inside
+
+The sidebar renders:
+
+- A **header** with the current conversation's title (clickable to open the conversation list dropdown), a "New chat" button, an options menu (rename / delete), and a close button.
+- The **conversation history dropdown**, grouped by Today / Yesterday / Earlier.
+- The **message list** with auto-scroll while the AI is responding.
+- The **input bar** with a stop button while a turn is in progress.
+
+For most apps, you don't need to touch any of this. If you want to build a different UI on top of the same chat state — different layout, different message rendering — see the [hooks reference](/react/use-mantl-chat).
+
+## Behavior notes
+
+- Sidebar open/closed state is persisted server-side per user as the `sidebar_open` preference, so it carries across devices.
+- The sidebar is rendered as a sticky right (or left) column inside whatever container it's mounted in. Make sure its parent has enough room.

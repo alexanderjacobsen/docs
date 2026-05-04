@@ -1,0 +1,131 @@
+---
+title: "MantlProvider"
+description: "The React context provider that owns chat state and authentication."
+---
+
+`MantlProvider` is the root component for any Mantl integration. Wrap your app (or any subtree that should have access to the chat) in it. Everything else — the sidebar, hooks, tools — reads from this context.
+
+## Usage
+
+```tsx
+import { MantlProvider, MantlSidebar } from "@mantl/react";
+
+export default function App({ children }) {
+  return (
+    <MantlProvider tokenUrl="/api/token">
+      {children}
+      <MantlSidebar />
+    </MantlProvider>
+  );
+}
+```
+
+## Props
+
+<ResponseField name="tokenUrl" type="string">
+  URL the SDK fetches a Mantl JWT from. Cookies are sent automatically. The endpoint should respond with `{ token: string }`.
+</ResponseField>
+
+<ResponseField name="getToken" type="() => Promise<string>">
+  Custom token fetcher. Use when you need full control — custom headers, off-domain endpoints, signed by a different mechanism.
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  Pre-fetched JWT. Mainly useful for SSR or when your auth flow already produced a token.
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  **Deprecated.** Dev-only userId mode that bypasses JWT auth. Don't use in production.
+</ResponseField>
+
+<ResponseField name="tools" type="Record<string, ClientTool>">
+  Tools the AI can call. Each tool has `description`, `parameters` (Zod schema or JSON Schema), and `execute`. See [Tools](/react/tools).
+</ResponseField>
+
+<ResponseField name="examplePrompts" type="ExamplePrompt[]">
+  Suggested prompts shown in the empty chat state. Each entry has `label` (button text) and optional `prompt` (text sent on click; defaults to label).
+</ResponseField>
+
+<ResponseField name="onNavigate" type="(url: string) => void">
+  Callback for internal-link clicks in assistant messages. Use this with your router (`router.push`) to navigate without full page reload.
+</ResponseField>
+
+<ResponseField name="host" type="string" default="mantlproxy.com">
+  API host. Override only for self-hosting or staging environments.
+</ResponseField>
+
+<ResponseField name="children" type="ReactNode" required>
+  Anything that should have access to the Mantl context, including the sidebar.
+</ResponseField>
+
+## Auth precedence
+
+You only need one of `token`, `tokenUrl`, or `getToken`. If multiple are provided, `token` wins, then `getToken`, then `tokenUrl`.
+
+```tsx
+// Production: server route signs JWTs.
+<MantlProvider tokenUrl="/api/token">...</MantlProvider>
+
+// Custom flow: full control over the request.
+<MantlProvider getToken={async () => fetchTokenFromOurAuth()}>...</MantlProvider>
+
+// Pre-fetched: e.g. from server props.
+<MantlProvider token={initialToken}>...</MantlProvider>
+```
+
+## Tool registration
+
+Tools passed via the `tools` prop are static — they're available globally inside the provider. For tools that depend on page-specific state, use [`useMantlTools`](/react/use-mantl-tools) inside the components that own that state.
+
+```tsx
+<MantlProvider
+  tokenUrl="/api/token"
+  tools={{
+    navigateTo: navigateToTool,   // app-wide
+    searchProducts: searchTool,   // app-wide
+  }}
+>
+  <ProductPage />
+</MantlProvider>
+
+// Inside ProductPage:
+function ProductPage() {
+  const [filter, setFilter] = useState("all");
+  useMantlTools({
+    setProductFilter: {
+      description: "Filter the product list",
+      parameters: z.object({ filter: z.enum(["all", "active", "sold"]) }),
+      execute: ({ filter }) => setFilter(filter),
+    },
+  });
+  // ...
+}
+```
+
+The two tool sets are merged automatically.
+
+## Navigation
+
+When the AI emits a markdown link like `[Order #42](/orders/42)`, Mantl can either do a full-page navigation (default) or call your `onNavigate` callback so your router handles it:
+
+```tsx
+import { useRouter } from "next/navigation";
+
+function App() {
+  const router = useRouter();
+  return (
+    <MantlProvider
+      tokenUrl="/api/token"
+      onNavigate={(url) => router.push(url)}
+    >
+      ...
+    </MantlProvider>
+  );
+}
+```
+
+External links are always opened normally regardless of `onNavigate`.
+
+## Token refresh
+
+The SDK auto-refreshes the JWT one minute before it expires. It also re-fetches when the tab regains visibility after sleep. You don't need to do anything to make this work — just make sure your `tokenUrl` endpoint can be hit at any time.

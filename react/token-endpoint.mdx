@@ -1,0 +1,115 @@
+---
+title: "Token Endpoint"
+description: "Implementing the server route that signs JWTs for the SDK."
+---
+
+The token endpoint is the single piece of server code you need to write to use Mantl. It signs a short-lived JWT with the user's identity using your project's secret key.
+
+## Anatomy
+
+The JWT must have these claims:
+
+- **`sub`** — your application's user id. Mantl uses this as the only scoping for conversations and preferences. Use a stable identifier (UUID, email, etc.).
+- **`proj`** — the Mantl project id. Extracted from your secret key (the part between `sk_proj_` and the next `_`).
+
+Plus the standard:
+- **`iat`** — issued-at timestamp.
+- **`exp`** — expiry. Recommended: 24 hours.
+
+Sign with HMAC-SHA256 (`HS256`) using your full secret key as the key.
+
+## Next.js (App Router)
+
+```ts app/api/mantl-token/route.ts
+import { SignJWT } from "jose";
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth"; // your existing auth helper
+
+const SECRET = process.env.MANTL_SECRET_KEY!;
+
+export async function GET() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const projectId = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+  const token = await new SignJWT({
+    sub: session.user.id,
+    proj: projectId,
+    name: session.user.name,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("24h")
+    .sign(new TextEncoder().encode(SECRET));
+
+  return NextResponse.json({ token });
+}
+```
+
+Then on the client:
+
+```tsx
+<MantlProvider tokenUrl="/api/mantl-token">...</MantlProvider>
+```
+
+## Express / Node
+
+```ts
+import express from "express";
+import { SignJWT } from "jose";
+
+const app = express();
+const SECRET = process.env.MANTL_SECRET_KEY!;
+
+app.get("/api/mantl-token", async (req, res) => {
+  const user = await getCurrentUser(req); // your auth
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const projectId = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+  const token = await new SignJWT({
+    sub: user.id,
+    proj: projectId,
+    name: user.name,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("24h")
+    .sign(new TextEncoder().encode(SECRET));
+
+  res.json({ token });
+});
+```
+
+## SvelteKit / Remix / others
+
+The pattern is identical. Authenticate the user via your usual session mechanism, sign a JWT with the three claims and HS256, return as JSON.
+
+## Common mistakes
+
+<AccordionGroup>
+  <Accordion title="Hardcoding the secret in client code">
+    The secret must stay on the server. If you embed it in client-side code or expose it via a public env var (`NEXT_PUBLIC_*`, `VITE_*`), anyone can mint tokens for any user.
+  </Accordion>
+  <Accordion title="Using a different signing algorithm">
+    Mantl verifies HS256 only. Don't use RS256 or other variants — verification will fail.
+  </Accordion>
+  <Accordion title="Long expiry times">
+    Tokens are cheap to mint. Use a short expiry (24h or less) so a leaked token has limited damage. The SDK will refresh automatically before expiry.
+  </Accordion>
+  <Accordion title="Reusing user ids">
+    The `sub` claim must be stable per user. If you reissue ids when users change emails or upgrade accounts, their conversation history won't carry over.
+  </Accordion>
+  <Accordion title="Missing `proj` claim">
+    The backend looks up the project by `proj` to find which secret to verify against. Without it, every token fails verification.
+  </Accordion>
+</AccordionGroup>
+
+## Testing the endpoint
+
+```bash
+curl -i http://localhost:3000/api/mantl-token --cookie "session=<your-session-cookie>"
+```
+
+Should return `200 {"token":"eyJ..."}`. You can paste the token into [jwt.io](https://jwt.io) to inspect the claims (don't paste the secret, just the token).

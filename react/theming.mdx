@@ -1,0 +1,113 @@
+---
+title: "Theming"
+description: "Match the chat to your brand with CSS variables."
+---
+
+Mantl is themable through CSS custom properties. Set them anywhere in your stylesheet (`:root`, on a wrapper element, or scoped by class) and the sidebar picks them up.
+
+## Variables
+
+<ResponseField name="--mantl-bg" default="#ffffff">
+  Sidebar background color.
+</ResponseField>
+
+<ResponseField name="--mantl-history-bg" default="#ffffff">
+  Conversation history dropdown background.
+</ResponseField>
+
+<ResponseField name="--mantl-history-fg" default="rgba(0, 0, 0, 0.87)">
+  Text color of conversation titles in the history dropdown.
+</ResponseField>
+
+<ResponseField name="--mantl-prompt-bg" default="#ffffff">
+  Background of the input/prompt bar.
+</ResponseField>
+
+<ResponseField name="--mantl-user-bubble-bg" default="#e9ecef">
+  Background of user message bubbles.
+</ResponseField>
+
+<ResponseField name="--mantl-user-text" default="rgba(0, 0, 0, 0.87)">
+  Text color inside user message bubbles (and the input field).
+</ResponseField>
+
+<ResponseField name="--mantl-response-text" default="rgba(0, 0, 0, 0.87)">
+  Text color of assistant responses.
+</ResponseField>
+
+<ResponseField name="--mantl-header-fg" default="rgba(0, 0, 0, 0.87)">
+  Text and icon color in the sidebar header.
+</ResponseField>
+
+<ResponseField name="--mantl-launcher-bg" default="#212529">
+  Background of the floating launcher button.
+</ResponseField>
+
+<ResponseField name="--mantl-send-button-bg" default="#212529">
+  Background of the send button in the input bar.
+</ResponseField>
+
+<ResponseField name="--mantl-font-family" default="inherit">
+  Font family for the entire chat. Default is `inherit`, so the chat picks up your host page's font automatically. Override only if you want a specific font for the chat.
+</ResponseField>
+
+## Examples
+
+### Dark mode
+
+```css
+:root {
+  --mantl-bg: #1a1a1a;
+  --mantl-history-bg: #1a1a1a;
+  --mantl-history-fg: rgba(255, 255, 255, 0.87);
+  --mantl-prompt-bg: #2a2a2a;
+  --mantl-user-bubble-bg: #3a3a3a;
+  --mantl-user-text: rgba(255, 255, 255, 0.87);
+  --mantl-response-text: rgba(255, 255, 255, 0.87);
+  --mantl-header-fg: rgba(255, 255, 255, 0.87);
+  --mantl-launcher-bg: #ffffff;
+  --mantl-send-button-bg: #ffffff;
+}
+```
+
+### Brand color accent
+
+If your brand uses a particular blue for primary actions, set the launcher and send button to that:
+
+```css
+:root {
+  --mantl-launcher-bg: #0066cc;
+  --mantl-send-button-bg: #0066cc;
+}
+```
+
+### Match your existing card UI
+
+If the rest of your product uses subtle gray backgrounds for cards, blend in:
+
+```css
+:root {
+  --mantl-bg: #f8f9fa;
+  --mantl-user-bubble-bg: #ffffff;
+}
+```
+
+## Scoping
+
+Variables can be set on any ancestor of the sidebar — `:root` is convenient, but you can also scope to your app shell:
+
+```css
+.app {
+  --mantl-bg: #fafafa;
+}
+```
+
+Or apply per-route, per-theme, etc. — same as any CSS custom property.
+
+## What's not themable via variables
+
+The chat's typography (font sizes, line heights) and spacing are baked into the component styles. If you need to override those, you can target the SDK's class names directly — the input field has `mantl-input`, the message list has `mantl-messages`, etc. — but be aware that those are subject to change between SDK versions, so prefer the variable API where it covers your use case.
+
+## Auto-adapting elements
+
+Some elements use `rgba(0, 0, 0, X)` rather than a themed variable for borders, dividers, and disabled states. They automatically adapt against whatever background you've set, so you usually don't need to override them when switching to dark mode — they'll show as semi-transparent on dark surfaces too.
