@@ -18,20 +18,28 @@ Sign in to the [Mantl dashboard](https://app.mantl.dev), create a project, and g
 
 ## 3. Add a token endpoint
 
-The SDK never sees your project's secret key. Instead, your server signs a short-lived JWT and the SDK fetches that. In Next.js this is one route:
+The SDK never sees your project's secret key. Instead, your server signs a short-lived JWT and the SDK fetches that. The contract is the same regardless of backend:
 
-```ts app/api/token/route.ts
+- **Algorithm**: HMAC-SHA256 (`HS256`)
+- **Signing key**: your full project secret (`sk_proj_...`), used as raw HMAC bytes
+- **Claims**: `sub` (your user id), `proj` (the project id, parsed from the secret), `iat`, `exp`. Optional `name` (displayed in the chat header).
+- **Response**: JSON `{ "token": "<jwt>" }`
+
+If your stack isn't shown below, any JWT library that can sign HS256 will work.
+
+<CodeGroup>
+
+```ts Next.js (app/api/token/route.ts)
 import { SignJWT } from "jose";
 import { NextResponse } from "next/server";
 
 const SECRET = process.env.MANTL_SECRET_KEY!;
+const PROJECT_ID = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
 
 export async function GET() {
-  const projectId = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
-
   const token = await new SignJWT({
-    sub: "user-123",       // your real user id goes here
-    proj: projectId,
+    sub: "user-123",      // your authenticated user id
+    proj: PROJECT_ID,
     name: "Alice",
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -43,7 +51,119 @@ export async function GET() {
 }
 ```
 
-Add `MANTL_SECRET_KEY` to your `.env.local`.
+```ts Express (Node.js)
+import express from "express";
+import jwt from "jsonwebtoken";
+
+const SECRET = process.env.MANTL_SECRET_KEY!;
+const PROJECT_ID = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+const app = express();
+
+app.get("/api/token", (req, res) => {
+  const token = jwt.sign(
+    { sub: "user-123", proj: PROJECT_ID, name: "Alice" },
+    SECRET,
+    { algorithm: "HS256", expiresIn: "24h" },
+  );
+  res.json({ token });
+});
+
+app.listen(3000);
+```
+
+```ts Hono (Bun / Cloudflare / Deno)
+import { Hono } from "hono";
+import { SignJWT } from "jose";
+
+const SECRET = process.env.MANTL_SECRET_KEY!;
+const PROJECT_ID = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+const app = new Hono();
+
+app.get("/api/token", async (c) => {
+  const token = await new SignJWT({
+    sub: "user-123",
+    proj: PROJECT_ID,
+    name: "Alice",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("24h")
+    .sign(new TextEncoder().encode(SECRET));
+  return c.json({ token });
+});
+
+export default app;
+```
+
+```python FastAPI (Python)
+import os
+import re
+from datetime import datetime, timedelta, timezone
+import jwt  # pip install PyJWT
+from fastapi import FastAPI
+
+SECRET = os.environ["MANTL_SECRET_KEY"]
+PROJECT_ID = re.match(r"^sk_proj_([a-z0-9-]+?)_", SECRET).group(1)
+
+app = FastAPI()
+
+@app.get("/api/token")
+def get_token():
+    now = datetime.now(tz=timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": "user-123",
+            "proj": PROJECT_ID,
+            "name": "Alice",
+            "iat": now,
+            "exp": now + timedelta(hours=24),
+        },
+        SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token}
+```
+
+```go Go (net/http)
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+    "os"
+    "regexp"
+    "time"
+
+    "github.com/golang-jwt/jwt/v5"
+)
+
+var secret = os.Getenv("MANTL_SECRET_KEY")
+var projectID = regexp.MustCompile(`^sk_proj_([a-z0-9-]+?)_`).
+    FindStringSubmatch(secret)[1]
+
+func tokenHandler(w http.ResponseWriter, r *http.Request) {
+    t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+        "sub":  "user-123",
+        "proj": projectID,
+        "name": "Alice",
+        "iat":  time.Now().Unix(),
+        "exp":  time.Now().Add(24 * time.Hour).Unix(),
+    })
+    signed, _ := t.SignedString([]byte(secret))
+    _ = json.NewEncoder(w).Encode(map[string]string{"token": signed})
+}
+
+func main() {
+    http.HandleFunc("/api/token", tokenHandler)
+    http.ListenAndServe(":3000", nil)
+}
+```
+
+</CodeGroup>
+
+Set `MANTL_SECRET_KEY` in your server's environment (e.g. `.env.local`, your platform's secrets manager — wherever your other server-side secrets live). Replace the hardcoded `"user-123"` with your authenticated user's id (from your session, auth provider, etc.).
 
 <Tip>
   The `sub` claim is your application's user id. Mantl uses it to scope conversations and preferences per user — if you change it across sessions, history won't carry over.
