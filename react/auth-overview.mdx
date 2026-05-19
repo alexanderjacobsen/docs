@@ -86,14 +86,31 @@ The token's `sub` claim is your application's user identity. Mantl uses it as th
 
 If you change the `sub` for the same person across sessions (e.g. you reissue user IDs), their chat history won't carry over. Use a stable identifier — UUID, email, whatever your auth system gives you.
 
-## Token errors
+## When auth fails
 
-If the token fetch fails (network error, 401 from your endpoint, malformed response), the chat shows an "Authentication failed" message instead of the message list. You can read the error message via `useMantl().tokenError`:
+The SDK fails closed: if it can't authenticate, it hides itself entirely. End-users see no chat panel, no launcher, no error message — none of the plumbing they couldn't act on anyway. Developers see one `console.warn` with the underlying reason.
+
+This covers all of:
+
+- `tokenUrl` / `getToken` throws or returns a non-OK response.
+- The token signs and fetches fine, but the Mantl backend rejects it (401/403) — e.g. wrong signing key, expired JWT, revoked project.
+- Token expires mid-session and the auto-refresh fails.
+
+If you want to show your own UI in the broken state — for example a banner asking the user to re-authenticate — use the `onTokenError` callback or read `isReady` from the context:
 
 ```tsx
-function MaybeShowChat() {
-  const { tokenError } = useMantl();
-  if (tokenError) return <p>Couldn't load chat: {tokenError}</p>;
-  return <MantlSidebar />;
+// 1. Notification — fires once when auth breaks.
+<MantlProvider
+  tokenUrl="/api/mantl-token"
+  onTokenError={(err) => toast.error("Mantl is unavailable — please sign in again")}
+/>
+
+// 2. Anywhere in your tree — gate custom UI on `isReady`.
+function MyLauncher() {
+  const { isReady, openSidebar } = useMantl();
+  if (!isReady) return null;
+  return <button onClick={openSidebar}>Ask AI</button>;
 }
 ```
+
+`isReady` is `true` when the SDK has a working token and no API auth errors; `false` otherwise. Built-in `MantlSidebar` already gates itself on it.

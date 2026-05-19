@@ -8,7 +8,7 @@ description: "The React context provider that owns chat state and authentication
 ## Usage
 
 ```tsx
-import { MantlProvider, MantlSidebar } from "@mantl/react";
+import { MantlProvider, MantlSidebar } from "@getmantl/react";
 
 export default function App({ children }) {
   return (
@@ -48,6 +48,10 @@ export default function App({ children }) {
 
 <ResponseField name="onNavigate" type="(url: string) => void">
   Callback for internal-link clicks in assistant messages. Use this with your router (`router.push`) to navigate without full page reload.
+</ResponseField>
+
+<ResponseField name="onTokenError" type="(error: string) => void">
+  Called when authentication fails (token fetch failure, expired JWT, 401/403 from the API). The SDK already hides its built-in UI on auth failure — use this hook to surface a custom message of your own ("Please sign in again to use the assistant") if needed.
 </ResponseField>
 
 <ResponseField name="host" type="string" default="mantlproxy.com">

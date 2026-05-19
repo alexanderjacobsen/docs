@@ -54,7 +54,7 @@ For tools available everywhere in your app:
 For tools that depend on a specific page's state (e.g. a list filter, an open modal), register them from inside the relevant component. They're added when the component mounts and removed when it unmounts.
 
 ```tsx
-import { useMantlTools } from "@mantl/react";
+import { useMantlTools } from "@getmantl/react";
 
 function ProductsPage() {
   const [filter, setFilter] = useState("all");

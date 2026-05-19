@@ -8,7 +8,7 @@ description: "Access chat-level state and methods from any component."
 ## Usage
 
 ```tsx
-import { useMantl } from "@mantl/react";
+import { useMantl } from "@getmantl/react";
 
 function MyComponent() {
   const {
@@ -93,8 +93,12 @@ Must be called inside a `MantlProvider`.
   The current JWT, if you need to make authenticated requests of your own to the Mantl backend.
 </ResponseField>
 
+<ResponseField name="isReady" type="boolean">
+  True when the SDK has a working token and no API auth errors. Gate custom launchers and any other custom UI on this — when false, the SDK is in a broken state and triggering actions will be no-ops. The built-in `MantlSidebar` already gates itself on this.
+</ResponseField>
+
 <ResponseField name="tokenError" type="string | null">
-  Error message from the most recent failed token fetch. Use this to render a "couldn't authenticate" UI.
+  Error message from the most recent failed token fetch. Note: not set for API-level 401/403 — use `isReady` if you want a single "is everything OK?" signal. See [Authentication](/react/auth-overview).
 </ResponseField>
 
 ### Preferences
@@ -126,7 +130,7 @@ Must be called inside a `MantlProvider`.
 ### Custom launcher in your nav
 
 ```tsx
-import { useMantl } from "@mantl/react";
+import { useMantl } from "@getmantl/react";
 import { Sparkles } from "lucide-react";
 
 function NavBar() {
@@ -142,7 +146,7 @@ function NavBar() {
 ### Show "Ask AI about this page" with context
 
 ```tsx
-import { useMantl, useMantlContext } from "@mantl/react";
+import { useMantl, useMantlContext } from "@getmantl/react";
 
 function ProductPage({ product }) {
   const { openSidebar } = useMantl();
