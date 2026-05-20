@@ -1,0 +1,116 @@
+---
+title: "[mantlTools]"
+description: "Register tools that follow an element's lifecycle."
+---
+
+`[mantlTools]` is a directive that registers a set of tools while its host element is alive. When the element is destroyed (e.g. the user navigates away, an `@if` block exits), the tools are automatically unregistered.
+
+It's the Angular equivalent of React's `useMantlTools` hook.
+
+## Usage
+
+```ts
+import { Component } from '@angular/core';
+import { MantlToolsDirective, ClientTools } from '@getmantl/angular';
+
+@Component({
+  standalone: true,
+  imports: [MantlToolsDirective],
+  template: `
+    <section [mantlTools]="productTools">
+      <!-- product details -->
+    </section>
+  `,
+})
+class ProductPage {
+  productTools: ClientTools = {
+    addToCart: {
+      description: "Add the current product to the cart",
+      parameters: { type: "object", properties: {}, required: [] },
+      execute: () => {
+        this.cart.add(this.product);
+        return { success: true };
+      },
+    },
+  };
+}
+```
+
+While `ProductPage` is on screen, the AI sees `addToCart` as an available tool. When the user navigates away, it's automatically unregistered.
+
+## How merging works
+
+Tools registered via `[mantlTools]` are merged with whatever you pass to `<mantl-chat>`'s top-level `[tools]` input.
+
+```html
+<mantl-chat [tools]="globalTools" />
+
+<!-- Elsewhere in the app: -->
+<section [mantlTools]="productTools"></section>
+```
+
+When the product section is mounted, the AI sees `globalTools` ∪ `productTools`. When it's unmounted, only `globalTools` remain.
+
+## Multiple components, multiple tool sets
+
+Each `[mantlTools]` directive gets its own internally-generated id, so siblings can each register their own tools without conflict.
+
+```html
+<filter-bar [mantlTools]="filterTools" />
+<product-detail [mantlTools]="detailTools" />
+```
+
+Both mount → AI sees `filterTools` ∪ `detailTools` plus globals. Either unmounts → its contributions disappear.
+
+## Reactive tool sets
+
+The input is a regular Angular template expression. If your `productTools` reference changes (a new value passed in), the directive re-registers the new set under the same id, replacing the previous registration.
+
+To avoid unnecessary churn, declare your tools as a stable class field (not as a getter that produces a new object on every change-detection pass):
+
+```ts
+// Good — stable reference
+class ProductPage {
+  productTools: ClientTools = { /* ... */ };
+}
+
+// Bad — creates a new object on every CD cycle
+class ProductPage {
+  get productTools(): ClientTools { return { /* ... */ }; }
+}
+```
+
+If your tools genuinely need to close over reactive state, see [Capturing reactive state](#capturing-reactive-state) below.
+
+## Capturing reactive state
+
+Tools' `execute` functions are closures captured at registration time. If you reference frequently-changing state directly, you'll get stale data.
+
+```ts
+// Bad — execute captures the initial filter and stays stale
+filter = signal<'all' | 'active'>('all');
+tools: ClientTools = {
+  getCurrentFilter: {
+    description: 'Get the current filter',
+    parameters: { type: 'object', properties: {} },
+    execute: () => this.filter(),   // reads stale value? not in this case — `this` is bound, but...
+  },
+};
+```
+
+Since tools are class methods or arrow functions on a component instance, `this` is bound and the signal call is always live — so it works correctly. The pitfall is registering tools that close over a local `let` or function parameter instead. Stick to component fields.
+
+If you do need to register completely new tools when state changes, just assign a new tools object — the directive will pick up the change and re-register:
+
+```ts
+filter = signal<'all' | 'active'>('all');
+tools = computed<ClientTools>(() => ({
+  setFilter: {
+    description: `Switch filter (current: ${this.filter()})`,
+    parameters: { type: 'object', properties: { v: { type: 'string' } }, required: ['v'] },
+    execute: ({ v }) => this.filter.set(v as 'all' | 'active'),
+  },
+}));
+// Template:
+// <section [mantlTools]="tools()"></section>
+```

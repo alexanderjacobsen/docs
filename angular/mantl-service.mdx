@@ -1,0 +1,105 @@
+---
+title: "MantlService"
+description: "Programmatic access to current context and dynamic tool registration."
+---
+
+`MantlService` is an Angular injectable that exposes Mantl's runtime state and lets you push changes into it from anywhere in your app — different from passing inputs into `<mantl-chat>` because the service updates flow live, without re-rendering the host component.
+
+It's the Angular equivalent of React's `useMantlContext` + `useMantlTools` hooks.
+
+## When to use it
+
+- A component or service wants to **inject page context** so the AI knows what the user is looking at — without that data being on the parent that owns `<mantl-chat>`.
+- You want to **register tools per page or per component**, scoped to that lifecycle, rather than putting everything on the top-level `[tools]` input.
+- You want to **open or close** the chat panel programmatically (e.g. from a custom "Ask AI" button in your nav).
+
+For most of these, you'll likely prefer the [`[mantlContext]`](/angular/mantl-context) and [`[mantlTools]`](/angular/mantl-tools) directives — they wrap the service with Angular's normal lifecycle, so you don't have to remember to clean up in `ngOnDestroy`. The service is the imperative escape hatch.
+
+## Usage
+
+```ts
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { MantlService, ClientTools } from '@getmantl/angular';
+
+@Component({ /* ... */ })
+export class ProductPage implements OnInit, OnDestroy {
+  private readonly mantl = inject(MantlService);
+
+  ngOnInit() {
+    this.mantl.setCurrentContext(
+      `User is viewing product: ${this.product.name} (id: ${this.product.id})`
+    );
+    this.mantl.registerTools('product-page', this.productTools);
+  }
+
+  ngOnDestroy() {
+    this.mantl.setCurrentContext(null);
+    this.mantl.unregisterTools('product-page');
+  }
+
+  productTools: ClientTools = { /* ... */ };
+}
+```
+
+## API
+
+### Signals (read)
+
+<ResponseField name="currentContext" type="Signal<string | null>">
+  The string currently being injected into new user messages, or `null` if no context is set.
+</ResponseField>
+
+<ResponseField name="dynamicTools" type="Signal<Record<string, ClientTools>>">
+  All dynamically-registered tool sets, keyed by id. Merged with the top-level `[tools]` input on `<mantl-chat>`.
+</ResponseField>
+
+### Methods (write)
+
+<ResponseField name="setCurrentContext(ctx: string | null): void">
+  Set or clear the page-level context. Only one context is active at a time — calling again replaces the previous value. Pass `null` to clear.
+
+  The context is injected as a hidden `<context>...</context>` block at the top of the next user message. The user doesn't see it; the AI does.
+</ResponseField>
+
+<ResponseField name="registerTools(id: string, tools: ClientTools): void">
+  Add a set of tools under an arbitrary id. Multiple ids are merged; calling with the same id replaces that id's tools.
+</ResponseField>
+
+<ResponseField name="unregisterTools(id: string): void">
+  Remove the tools previously registered under `id`. No-op if `id` was never registered.
+</ResponseField>
+
+## Cleanup is your responsibility
+
+Unlike React's hooks, the imperative service doesn't auto-cleanup. If you call `setCurrentContext('...')` and never call `setCurrentContext(null)`, that context stays attached to *every* future message — even after the user has navigated to a different page.
+
+If you find yourself writing `ngOnDestroy` cleanup for context/tools, you probably want the directives instead:
+
+```html
+<!-- Auto-clears on directive destroy. -->
+<div [mantlContext]="'User is viewing product: ' + product.name"></div>
+<div [mantlTools]="productTools"></div>
+```
+
+See [`[mantlContext]`](/angular/mantl-context) and [`[mantlTools]`](/angular/mantl-tools).
+
+## Reading state
+
+The signals are read-only — you can use them in templates or other signals/effects:
+
+```ts
+import { Component, computed, inject } from '@angular/core';
+import { MantlService } from '@getmantl/angular';
+
+@Component({
+  template: `
+    <p>Current context: {{ currentContext() ?? 'none' }}</p>
+    <p>Tool ids registered: {{ toolIds() }}</p>
+  `,
+})
+class DebugPanel {
+  private mantl = inject(MantlService);
+  currentContext = this.mantl.currentContext;
+  toolIds = computed(() => Object.keys(this.mantl.dynamicTools()).join(', '));
+}
+```

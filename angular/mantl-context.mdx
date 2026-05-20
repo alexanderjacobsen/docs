@@ -1,0 +1,79 @@
+---
+title: "[mantlContext]"
+description: "Attach page-specific context to the next user message, declaratively."
+---
+
+`[mantlContext]` is a structural directive that injects a string of context into the AI's view of the next user message. The context is set when the directive's host element initializes and automatically cleared when it's destroyed — so as the user navigates around your app, the context follows what's actually on screen.
+
+It's the Angular equivalent of React's `useMantlContext` hook.
+
+## Usage
+
+```ts
+import { Component, Input } from '@angular/core';
+import { MantlContextDirective } from '@getmantl/angular';
+
+@Component({
+  standalone: true,
+  imports: [MantlContextDirective],
+  template: `
+    <section
+      [mantlContext]="
+        'User is viewing product: ' + product.name +
+        ' (id: ' + product.id + ', price: $' + product.price + ')'
+      "
+    >
+      <!-- product details -->
+    </section>
+  `,
+})
+class ProductPage {
+  @Input({ required: true }) product!: Product;
+}
+```
+
+When the user opens the chat from this page and types "How much is this?", the AI sees both the user's message *and* the context about which product they're viewing, so it can answer specifically.
+
+## How it's delivered
+
+The context is added as a hidden `<context>...</context>` block at the top of the next user message before it's sent to the model. The user doesn't see it in their message bubble; only the model does.
+
+Context attaches only to the *next* message after it's set — past messages keep whatever context was active when they were sent.
+
+## Reactive context
+
+The input is a regular Angular template expression, so it re-evaluates when its dependencies change:
+
+```html
+<section
+  [mantlContext]="'Viewing product: ' + product.name"
+></section>
+```
+
+When `product` changes (route param updates, user filters, etc.), Angular calls `ngOnChanges` on the directive and the context updates accordingly.
+
+## Combining with tools
+
+Context is for **passive awareness** (what page am I on, what's the user looking at). For active interactions, register tools so the AI can do things, not just know things.
+
+```html
+<section
+  [mantlContext]="'Viewing product: ' + product.name + ' (id: ' + product.id + ')'"
+  [mantlTools]="productTools"
+>
+  <!-- product details -->
+</section>
+```
+
+Now the user can say "add this to my cart" and the AI knows both *what* "this" refers to (from context) and *how* to do it (from the tool registered by `[mantlTools]`).
+
+## Scope
+
+Only one context can be active at a time. If multiple `[mantlContext]` directives are mounted simultaneously (e.g. nested components both set context), whichever was set most recently wins — `[mantlContext]` is not stacked or merged. Model the page conceptually: usually the route-level component owns the context.
+
+## Tips
+
+- **Keep it short.** Long context blocks bloat every prompt and waste tokens. Aim for one or two sentences.
+- **Be specific.** "On product page" is less useful than "Viewing product: Wireless Headphones (id: ord-001, $79.99)".
+- **Include identifiers.** If your tools take IDs as input, put them in the context so the AI can pass them through.
+- **Don't put sensitive data in context.** Anything in context goes to the LLM provider. Don't include secrets, PII, etc.

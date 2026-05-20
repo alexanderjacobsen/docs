@@ -58,6 +58,37 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Angular",
+        "groups": [
+          {
+            "group": "Components",
+            "pages": [
+              "angular/mantl-chat"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "angular/tools"
+            ]
+          },
+          {
+            "group": "Service & directives",
+            "pages": [
+              "angular/mantl-service",
+              "angular/mantl-context",
+              "angular/mantl-tools"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "angular/auth-overview"
+            ]
+          }
+        ]
       }
     ]
   },
