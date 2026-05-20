@@ -63,6 +63,12 @@
         "tab": "Angular",
         "groups": [
           {
+            "group": "Getting started",
+            "pages": [
+              "angular/quickstart"
+            ]
+          },
+          {
             "group": "Components",
             "pages": [
               "angular/mantl-chat"

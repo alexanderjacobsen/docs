@@ -1,0 +1,310 @@
+---
+title: "Quickstart (Angular)"
+description: "Get Mantl running in your Angular app in five minutes."
+icon: "rocket"
+---
+
+This guide shows the smallest viable Mantl integration in Angular: install the SDK, register a project, wire up auth, drop the chat into your app. Requires Angular 17+ (standalone components).
+
+## 1. Install the SDK
+
+```bash
+npm install @getmantl/angular
+```
+
+That installs `@getmantl/angular` and pulls in its dependencies (`@getmantl/react`, `@getmantl/core`, `react`, `react-dom`) transitively. You only need the one package — the internals are an implementation detail.
+
+## 2. Create a project
+
+Sign in to the [Mantl dashboard](https://app.mantl.dev), create a project, and generate an API key. The key looks like `sk_proj_<projectId>_<secret>` and is shown **once** — save it immediately.
+
+## 3. Add a token endpoint
+
+The SDK never sees your project's secret key. Instead, your server signs a short-lived JWT and the SDK fetches that. The contract is the same regardless of backend:
+
+- **Algorithm**: HMAC-SHA256 (`HS256`)
+- **Signing key**: your full project secret (`sk_proj_...`), used as raw HMAC bytes
+- **Claims**: `sub` (your user id), `proj` (the project id, parsed from the secret), `iat`, `exp`. Optional `name` (displayed in the chat header).
+- **Response**: JSON `{ "token": "<jwt>" }`
+
+Pick whatever JWT library your backend stack uses. Common examples:
+
+<CodeGroup>
+
+```ts Express (Node.js)
+import express from "express";
+import jwt from "jsonwebtoken";
+
+const SECRET = process.env.MANTL_SECRET_KEY!;
+const PROJECT_ID = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+const app = express();
+
+app.get("/api/mantl-token", (req, res) => {
+  const token = jwt.sign(
+    { sub: req.user.id, proj: PROJECT_ID, name: req.user.name },
+    SECRET,
+    { algorithm: "HS256", expiresIn: "24h" },
+  );
+  res.json({ token });
+});
+
+app.listen(3000);
+```
+
+```python FastAPI (Python)
+import os
+import re
+from datetime import datetime, timedelta, timezone
+import jwt  # pip install PyJWT
+from fastapi import FastAPI, Depends
+
+SECRET = os.environ["MANTL_SECRET_KEY"]
+PROJECT_ID = re.match(r"^sk_proj_([a-z0-9-]+?)_", SECRET).group(1)
+
+app = FastAPI()
+
+@app.get("/api/mantl-token")
+def get_token(user = Depends(get_current_user)):
+    now = datetime.now(tz=timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": user.id,
+            "proj": PROJECT_ID,
+            "name": user.name,
+            "iat": now,
+            "exp": now + timedelta(hours=24),
+        },
+        SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token}
+```
+
+```java Spring Boot (Java)
+@RestController
+@RequestMapping("/api")
+public class MantlTokenController {
+  @Value("${MANTL_SECRET_KEY}")
+  private String secret;
+
+  @GetMapping("/mantl-token")
+  public Map<String, String> getToken(@AuthenticationPrincipal User user) {
+    String projectId = secret.replaceAll("^sk_proj_([a-z0-9-]+?)_.*$", "$1");
+    String token = Jwts.builder()
+      .subject(user.getId())
+      .claim("proj", projectId)
+      .claim("name", user.getName())
+      .issuedAt(new Date())
+      .expiration(new Date(System.currentTimeMillis() + 24 * 60 * 60 * 1000))
+      .signWith(Keys.hmacShaKeyFor(secret.getBytes()), Jwts.SIG.HS256)
+      .compact();
+    return Map.of("token", token);
+  }
+}
+```
+
+```csharp ASP.NET Core (C#)
+[ApiController]
+[Route("api")]
+public class MantlTokenController : ControllerBase
+{
+    [HttpGet("mantl-token")]
+    [Authorize]
+    public IActionResult GetToken()
+    {
+        var secret = Environment.GetEnvironmentVariable("MANTL_SECRET_KEY")!;
+        var projectId = System.Text.RegularExpressions.Regex
+            .Match(secret, @"^sk_proj_([a-z0-9-]+?)_").Groups[1].Value;
+
+        var handler = new JwtSecurityTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object>
+            {
+                ["sub"] = User.FindFirst("sub")!.Value,
+                ["proj"] = projectId,
+                ["name"] = User.FindFirst("name")?.Value,
+            },
+            Expires = DateTime.UtcNow.AddHours(24),
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                SecurityAlgorithms.HmacSha256),
+        });
+        return Ok(new { token = handler.WriteToken(token) });
+    }
+}
+```
+
+```go Go (net/http)
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+    "os"
+    "regexp"
+    "time"
+
+    "github.com/golang-jwt/jwt/v5"
+)
+
+var secret = os.Getenv("MANTL_SECRET_KEY")
+var projectID = regexp.MustCompile(`^sk_proj_([a-z0-9-]+?)_`).
+    FindStringSubmatch(secret)[1]
+
+func tokenHandler(w http.ResponseWriter, r *http.Request) {
+    // assume userID comes from your auth middleware
+    userID := r.Context().Value("userID").(string)
+    t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+        "sub":  userID,
+        "proj": projectID,
+        "iat":  time.Now().Unix(),
+        "exp":  time.Now().Add(24 * time.Hour).Unix(),
+    })
+    signed, _ := t.SignedString([]byte(secret))
+    _ = json.NewEncoder(w).Encode(map[string]string{"token": signed})
+}
+```
+
+</CodeGroup>
+
+Set `MANTL_SECRET_KEY` in your server's environment. The `sub` claim should be your authenticated user's id from your session / auth provider.
+
+<Tip>
+  The `sub` claim is your application's user id. Mantl uses it to scope conversations and preferences per user — if you change it across sessions, history won't carry over.
+</Tip>
+
+## 4. Drop in the chat
+
+Import `MantlChatComponent` in your root component (next to `<router-outlet>`, **not** inside it — see the note below) and add `<mantl-chat>` to the template:
+
+```ts
+// src/app/app.component.ts
+import { Component, inject } from '@angular/core';
+import { Router, RouterOutlet } from '@angular/router';
+import { MantlChatComponent } from '@getmantl/angular';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [RouterOutlet, MantlChatComponent],
+  template: `
+    <router-outlet />
+    <mantl-chat
+      tokenUrl="/api/mantl-token"
+      (navigate)="router.navigateByUrl($event)"
+    />
+  `,
+})
+export class AppComponent {
+  router = inject(Router);
+}
+```
+
+That's it. Run your dev server, click the sparkle launcher in the corner, and chat.
+
+<Warning>
+  **Mount `<mantl-chat>` at the app root, outside `<router-outlet>`.** Putting it inside the outlet (or inside a route component) means the chat unmounts and remounts on every navigation — losing conversation state, re-fetching the token, re-downloading the chat panel chunk. The pattern above keeps the chat persistent across navigations.
+</Warning>
+
+## 5. Add a tool (optional)
+
+A chat without tools is just an LLM. Give it tools that read or modify your app:
+
+```ts
+import { Component, inject } from '@angular/core';
+import { Router, RouterOutlet } from '@angular/router';
+import { MantlChatComponent, ClientTools } from '@getmantl/angular';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [RouterOutlet, MantlChatComponent],
+  template: `
+    <router-outlet />
+    <mantl-chat
+      tokenUrl="/api/mantl-token"
+      [tools]="tools"
+      (navigate)="router.navigateByUrl($event)"
+    />
+  `,
+})
+export class AppComponent {
+  router = inject(Router);
+
+  tools: ClientTools = {
+    navigateTo: {
+      description: "Navigate the user to a page in the app",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to navigate to, e.g. /orders/42" },
+        },
+        required: ["path"],
+      },
+      execute: async (input: unknown) => {
+        const { path } = input as { path: string };
+        await this.router.navigateByUrl(path);
+        return { success: true };
+      },
+    },
+  };
+}
+```
+
+The AI can now call `navigateTo` whenever it judges the user wants to go somewhere.
+
+## 6. Per-page context and tools
+
+For tools and context that only make sense on certain routes — "this product page knows how to add items to the cart", "this admin page knows how to suspend users" — register them at the route level via directives:
+
+```ts
+import { Component, Input } from '@angular/core';
+import {
+  MantlContextDirective,
+  MantlToolsDirective,
+  ClientTools,
+} from '@getmantl/angular';
+
+@Component({
+  standalone: true,
+  imports: [MantlContextDirective, MantlToolsDirective],
+  template: `
+    <section
+      [mantlContext]="'Viewing product: ' + product.name + ' (id: ' + product.id + ')'"
+      [mantlTools]="productTools"
+    >
+      <!-- product details -->
+    </section>
+  `,
+})
+class ProductPage {
+  @Input({ required: true }) product!: Product;
+
+  productTools: ClientTools = {
+    addToCart: { /* ... */ },
+  };
+}
+```
+
+The directives auto-register when the section mounts and auto-unregister when it's destroyed (route navigation, `@if` toggle, etc.). The AI sees the page-specific context with every new message and the page-specific tools as available actions — and forgets about them when the user navigates away.
+
+See [`[mantlContext]`](/angular/mantl-context) and [`[mantlTools]`](/angular/mantl-tools) for the full reference.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Define real tools" icon="wrench" href="/angular/tools">
+    Tools with proper schemas, dependency injection, and confirmations.
+  </Card>
+  <Card title="MantlService" icon="code" href="/angular/mantl-service">
+    Imperative access to context and tools from anywhere in your app.
+  </Card>
+  <Card title="Auth options" icon="key" href="/angular/auth-overview">
+    Token URLs, custom fetchers, error handling.
+  </Card>
+  <Card title="Component reference" icon="box" href="/angular/mantl-chat">
+    All inputs and outputs of `<mantl-chat>`.
+  </Card>
+</CardGroup>
