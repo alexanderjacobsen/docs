@@ -210,12 +210,13 @@ That's it. Run your dev server, click the sparkle launcher in the corner, and ch
 
 ## 5. Add a tool (optional)
 
-A chat without tools is just an LLM. Give it tools that read or modify your app:
+A chat without tools is just an LLM. Give it tools that read or modify your app. Install Zod for clean schemas + type inference (`npm install zod`):
 
 ```ts
 import { Component, inject } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
 import { MantlChatComponent, ClientTools } from '@getmantl/angular';
+import { z } from 'zod';
 
 @Component({
   selector: 'app-root',
@@ -236,15 +237,10 @@ export class AppComponent {
   tools: ClientTools = {
     navigateTo: {
       description: "Navigate the user to a page in the app",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path to navigate to, e.g. /orders/42" },
-        },
-        required: ["path"],
-      },
-      execute: async (input: unknown) => {
-        const { path } = input as { path: string };
+      parameters: z.object({
+        path: z.string().describe("Path to navigate to, e.g. /orders/42"),
+      }),
+      execute: async ({ path }) => {
         await this.router.navigateByUrl(path);
         return { success: true };
       },
@@ -253,7 +249,7 @@ export class AppComponent {
 }
 ```
 
-The AI can now call `navigateTo` whenever it judges the user wants to go somewhere.
+The AI can now call `navigateTo` whenever it judges the user wants to go somewhere. The Zod schema gives you typed `path` in `execute` and runtime-validates the AI's input before your code runs. Plain JSON Schema works too if you prefer not to add Zod — see [Defining Tools](/angular/tools) for both shapes.
 
 ## 6. Per-page context and tools
 

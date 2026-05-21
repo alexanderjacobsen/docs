@@ -8,23 +8,15 @@ Tools are the heart of Mantl. They turn the chat from "Q&A" into "an assistant t
 ## Anatomy of a tool
 
 ```ts
-import { ClientTools } from '@getmantl/angular';
-import { Router } from '@angular/router';
+import { z } from 'zod';
+import { ClientTool } from '@getmantl/angular';
 
-const navigateTo = {
+const navigateTo: ClientTool = {
   description: "Navigate the user to a page in the app",
-  parameters: {
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description: "The path to navigate to, e.g. /orders/42",
-      },
-    },
-    required: ["path"],
-  },
-  execute: async (input: unknown) => {
-    const { path } = input as { path: string };
+  parameters: z.object({
+    path: z.string().describe("The path to navigate to, e.g. /orders/42"),
+  }),
+  execute: async ({ path }) => {
     await this.router.navigateByUrl(path);
     return { success: true };
   },
@@ -34,7 +26,7 @@ const navigateTo = {
 Three parts:
 
 - **`description`** — natural-language explanation of what the tool does. The model uses this to decide when to call it. Be specific.
-- **`parameters`** — a JSON Schema describing the tool's input. Each field can have a `description` to give the model more context.
+- **`parameters`** — a [Zod](https://zod.dev) schema or plain JSON Schema describing the tool's input. With Zod you get TypeScript inference inside `execute` for free, plus runtime validation before your code runs.
 - **`execute`** — the function that actually runs in the browser when the AI calls the tool. Receives the validated input and returns whatever the AI should see.
 
 ## Registering tools
@@ -155,6 +147,34 @@ const deleteOrder: ClientTool = {
 ```
 
 The user will see an "Approve / Deny" prompt in the chat before the tool runs.
+
+## Schema choices
+
+Mantl accepts both Zod schemas and plain JSON Schema for `parameters`.
+
+<CodeGroup>
+```ts Zod
+import { z } from 'zod';
+
+parameters: z.object({
+  query: z.string().describe("Search query"),
+  limit: z.number().int().min(1).max(100).default(10),
+})
+```
+
+```ts JSON Schema
+parameters: {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "Search query" },
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+  },
+  required: ["query"],
+}
+```
+</CodeGroup>
+
+Zod is recommended — you get TypeScript inference on the `execute` argument for free (no manual `input as { … }` cast) and runtime validation before your code runs. Just install it (`npm install zod`); the rest is automatic. JSON Schema is fine if you'd rather not add the dep.
 
 ## Tips for good tools
 
