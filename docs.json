@@ -102,14 +102,6 @@
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
-  "navbar": {
-    "links": [
-      {
-        "label": "GitHub",
-        "href": "https://github.com/alexanderjacobsen/sidekick"
-      }
-    ]
-  },
   "contextual": {
     "options": ["copy", "view", "chatgpt", "claude"]
   },
