@@ -37,19 +37,19 @@ Either way, the chat input is disabled while a confirmation is pending — the u
 
 ## Customizing the approval UI
 
-The default UI shows the tool name and a JSON view of the arguments. If you want richer cards (e.g. "Delete order #42 — Wireless Headphones, $79.99"), provide a `formatInput` function:
+The default UI shows the tool name and a JSON view of the arguments. If you want richer cards (e.g. "Delete order #42 — Wireless Headphones, $79.99"), provide a `formatConfirmation` function:
 
 ```tsx
 const deleteOrder = {
   description: "Delete an order by ID",
   parameters: z.object({ id: z.string() }),
   requiresConfirmation: true,
-  formatInput: ({ id }) => `Delete order #${id}?`,
+  formatConfirmation: ({ id }) => `Delete order #${id}?`,
   execute: async ({ id }) => { /* ... */ },
 };
 ```
 
-`formatInput` returns a string used as the prompt headline. For a fully custom card, render your own UI from [`useMantlChat`](/react/use-mantl-chat) and gate it on `chat.hasPendingConfirmation`.
+`formatConfirmation` returns a string used as the prompt headline. For a fully custom card, render your own UI from [`useMantlChat`](/react/use-mantl-chat) and gate it on `chat.hasPendingConfirmation`.
 
 ## When to require confirmation
 

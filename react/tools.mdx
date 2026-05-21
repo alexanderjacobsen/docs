@@ -133,6 +133,42 @@ const deleteOrder = {
 
 The user will see an "Approve / Deny" prompt in the chat before the tool runs. See [Confirmation flow](/react/confirmation) for details.
 
+## Customizing the tool call display
+
+Tool calls render inline in the chat as a small "tool chip" — an icon, a label, a status line, and an optional expandable details panel. Four fields on a tool let you tailor that surface:
+
+| Field | Type | What it changes |
+| --- | --- | --- |
+| `displayName` | `string` | The label on the chip. Defaults to a humanized form of the tool key (`openOrder` → "open order"). |
+| `formatOutput` | `(output) => string` | The one-line status shown after the tool runs, in place of the default `"<name> completed"`. |
+| `details` | `(input, output) => ReactNode` | Renders a custom React node in the expandable panel below the chip. Use it for previews, embedded views, inline charts. |
+| `defaultExpanded` | `boolean` | If `true`, the details panel starts open. Defaults to `false`. |
+
+```tsx
+const searchProducts = {
+  description: "Search the catalog",
+  parameters: z.object({ query: z.string() }),
+  displayName: "Search products",
+  formatOutput: (output) => `Found ${output.results.length} matches`,
+  defaultExpanded: true,
+  details: (_input, output) => (
+    <ul>
+      {output.results.map((p) => (
+        <li key={p.id}>
+          <strong>{p.name}</strong> — ${p.price}
+        </li>
+      ))}
+    </ul>
+  ),
+  execute: async ({ query }) => {
+    const results = await fetch(`/api/products?q=${query}`).then((r) => r.json());
+    return { results };
+  },
+};
+```
+
+`details` only renders once the tool produces output — it doesn't show during streaming or while a confirmation is pending. The chip only becomes expandable when there's something to show, so omit `details` when you don't need it.
+
 ## Schema choices
 
 Mantl accepts both Zod schemas and plain JSON Schema for `parameters`.

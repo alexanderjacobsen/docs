@@ -148,6 +148,34 @@ const deleteOrder: ClientTool = {
 
 The user will see an "Approve / Deny" prompt in the chat before the tool runs.
 
+## Customizing the tool call display
+
+Tool calls render inline in the chat as a small "tool chip" — an icon, a label, and a status line. Two fields on a tool let you tailor that:
+
+| Field | Type | What it changes |
+| --- | --- | --- |
+| `displayName` | `string` | The label on the chip. Defaults to a humanized form of the tool key (`openOrder` → "open order"). |
+| `formatOutput` | `(output) => string` | The one-line status shown after the tool runs, in place of the default `"<name> completed"`. |
+
+```ts
+productTools: ClientTools = {
+  searchProducts: {
+    description: "Search the catalog",
+    parameters: z.object({ query: z.string() }),
+    displayName: "Search products",
+    formatOutput: (output) => `Found ${(output as { results: unknown[] }).results.length} matches`,
+    execute: async ({ query }) => {
+      const results = await this.http.get(`/api/products?q=${query}`).toPromise();
+      return { results };
+    },
+  },
+};
+```
+
+### About custom-rendered details
+
+The underlying `ClientTool` type also has `details: (input, output) => …` and `defaultExpanded: boolean` fields, which render a custom node in an expandable panel below the chip. **Today this only works if `details` returns a React `ReactNode`** — `@getmantl/angular` mounts the React chat panel internally, and the details renderer runs inside that React tree. There's no Angular `TemplateRef` bridge yet, so using `details` from Angular means writing React (e.g. via `React.createElement`). For now, stick to `displayName` and `formatOutput`; an Angular-native renderer is planned.
+
 ## Schema choices
 
 Mantl accepts both Zod schemas and plain JSON Schema for `parameters`.
