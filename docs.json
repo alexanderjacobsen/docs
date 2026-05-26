@@ -95,6 +95,43 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Vue",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "vue/quickstart"
+            ]
+          },
+          {
+            "group": "Components",
+            "pages": [
+              "vue/mantl-chat"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "vue/tools"
+            ]
+          },
+          {
+            "group": "Composables",
+            "pages": [
+              "vue/use-mantl",
+              "vue/use-mantl-context",
+              "vue/use-mantl-tools"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "vue/auth-overview"
+            ]
+          }
+        ]
       }
     ]
   },

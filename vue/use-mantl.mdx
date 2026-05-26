@@ -1,0 +1,117 @@
+---
+title: "useMantl"
+description: "Programmatic access to current context and dynamic tool registration."
+---
+
+`useMantl` is a Vue composable that exposes Mantl's runtime state and lets you push changes into it from anywhere in your app — different from passing props into `<MantlChat>` because the updates flow live, without re-rendering the host component.
+
+It's the Vue equivalent of React's `useMantlContext` + `useMantlTools` hooks (and of Angular's `MantlService`).
+
+## When to use it
+
+- A component wants to **inject page context** so the AI knows what the user is looking at — without that data being on the parent that owns `<MantlChat>`.
+- You want to **register tools per page or per component**, scoped to that lifecycle, rather than putting everything on the top-level `:tools` prop.
+
+For most of these, you'll likely prefer the [`useMantlContext`](/vue/use-mantl-context) and [`useMantlTools`](/vue/use-mantl-tools) composables — they wrap `useMantl` with Vue's normal lifecycle, so you don't have to remember to clean up in `onBeforeUnmount`. `useMantl` is the imperative escape hatch.
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { onMounted, onBeforeUnmount } from 'vue';
+import { useMantl, type VueClientTools } from '@getmantl/vue';
+
+const props = defineProps<{ product: Product }>();
+const { setCurrentContext, registerTools, unregisterTools } = useMantl();
+
+const productTools: VueClientTools = { /* ... */ };
+
+onMounted(() => {
+  setCurrentContext(
+    `User is viewing product: ${props.product.name} (id: ${props.product.id})`,
+  );
+  registerTools('product-page', productTools);
+});
+
+onBeforeUnmount(() => {
+  setCurrentContext(null);
+  unregisterTools('product-page');
+});
+</script>
+```
+
+## API
+
+### Reactive refs (read)
+
+<ResponseField name="currentContext" type="Readonly<Ref<string | null>>">
+  The string currently being injected into new user messages, or `null` if no context is set.
+</ResponseField>
+
+<ResponseField name="dynamicTools" type="ComputedRef<ClientTools>">
+  All dynamically-registered tool sets merged into one record. Combined with the top-level `:tools` prop on `<MantlChat>`.
+</ResponseField>
+
+### Methods (write)
+
+<ResponseField name="setCurrentContext(ctx: string | null): void">
+  Set or clear the page-level context. Only one context is active at a time — calling again replaces the previous value. Pass `null` to clear.
+
+  The context is injected as a hidden `<context>...</context>` block at the top of the next user message. The user doesn't see it; the AI does.
+</ResponseField>
+
+<ResponseField name="registerTools(id: string, tools: ClientTools): void">
+  Add a set of tools under an arbitrary id. Multiple ids are merged; calling with the same id replaces that id's tools.
+</ResponseField>
+
+<ResponseField name="unregisterTools(id: string): void">
+  Remove the tools previously registered under `id`. No-op if `id` was never registered.
+</ResponseField>
+
+## Cleanup is your responsibility
+
+Unlike the lifecycle-tied composables, `useMantl`'s setters don't auto-cleanup. If you call `setCurrentContext('...')` and never call `setCurrentContext(null)`, that context stays attached to *every* future message — even after the user has navigated to a different page.
+
+If you find yourself writing `onBeforeUnmount` cleanup for context/tools, you probably want the lifecycle composables instead:
+
+```ts
+useMantlContext(() => `User is viewing product: ${product.name}`);
+useMantlTools(productTools);
+```
+
+Both auto-clear when the component unmounts. See [`useMantlContext`](/vue/use-mantl-context) and [`useMantlTools`](/vue/use-mantl-tools).
+
+## Reading state
+
+The refs are read-only — you can use them in templates or in `watch` / `computed`:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useMantl } from '@getmantl/vue';
+
+const { currentContext, dynamicTools } = useMantl();
+const toolNames = computed(() => Object.keys(dynamicTools.value).join(', '));
+</script>
+
+<template>
+  <p>Current context: {{ currentContext ?? 'none' }}</p>
+  <p>Tools registered: {{ toolNames }}</p>
+</template>
+```
+
+## Direct module exports
+
+`@getmantl/vue` also exposes the underlying state and setters as plain module exports — useful from non-component code (composables, plugin setup, Pinia stores):
+
+```ts
+import {
+  currentContext,
+  mergedDynamicTools,
+  setCurrentContext,
+  registerTools,
+  unregisterTools,
+} from '@getmantl/vue';
+```
+
+They reference the same singleton state that `useMantl()` returns — calling `useMantl()` is just the conventional composable shape.

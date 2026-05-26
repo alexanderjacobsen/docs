@@ -1,0 +1,130 @@
+---
+title: "<MantlChat>"
+description: "The single Vue component that drops the AI chat panel into your app."
+---
+
+`<MantlChat>` is the single component you need for a Mantl integration in Vue. There's no provider/wrapper to set up — drop the element into a template, pass your auth and tools, done. Conversation persistence, the side panel UI, message streaming, and tool routing all happen inside it.
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { MantlChat, type VueClientTools } from '@getmantl/vue';
+
+const tools: VueClientTools = {
+  /* see Tools page */
+};
+
+function onNavigate(url: string) {
+  /* hand off to your router */
+}
+</script>
+
+<template>
+  <main>
+    <!-- your app -->
+  </main>
+  <MantlChat
+    token-url="/api/mantl-token"
+    :tools="tools"
+    @navigate="onNavigate"
+  />
+</template>
+```
+
+Requires Vue 3.4+ (composition API + `<script setup>` recommended).
+
+## Props
+
+### Auth
+
+<ResponseField name="tokenUrl" type="string">
+  URL the SDK fetches a Mantl JWT from. Cookies are sent automatically. The endpoint should respond with `{ token: string }`. The most common option for production.
+</ResponseField>
+
+<ResponseField name="getToken" type="() => Promise<string>">
+  Custom token fetcher. Use when you need full control — custom headers, off-domain endpoints, etc.
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  Pre-fetched JWT. Mainly useful when your auth flow already produced one before `<MantlChat>` mounts.
+</ResponseField>
+
+<ResponseField name="apiHost" type="string" default='"mantlproxy.com"'>
+  API host. Override only for self-hosting or staging.
+</ResponseField>
+
+You need exactly one of `tokenUrl`, `getToken`, or `token`. See [Authentication](/vue/auth-overview) for the full flow and the token endpoint contract.
+
+### Content
+
+<ResponseField name="tools" type="Record<string, ClientTool>">
+  Tools the AI can call. Same shape across all framework bindings — see [Defining tools](/vue/tools). For per-page or per-component tools, use the [`useMantlTools`](/vue/use-mantl-tools) composable instead.
+</ResponseField>
+
+<ResponseField name="examplePrompts" type="ExamplePrompt[]">
+  Suggested prompts shown in the empty chat state. Each entry has `label` (button text) and optional `prompt` (text sent on click; defaults to label).
+</ResponseField>
+
+### UI
+
+<ResponseField name="position" type='"left" | "right"' default='"right"'>
+  Which side of the viewport the panel docks to.
+</ResponseField>
+
+<ResponseField name="defaultOpen" type="boolean" default="false">
+  First-visit fallback. If a user has no saved sidebar preference yet and `defaultOpen` is true, the sidebar opens once. After they interact (open/close), their preference takes over.
+</ResponseField>
+
+<ResponseField name="showLauncher" type="boolean" default="true">
+  Whether to render the floating launcher button. Set to `false` if you want to wire your own UI to open the chat — see [`useMantl`](/vue/use-mantl) for programmatic access.
+</ResponseField>
+
+<ResponseField name="eager" type="boolean" default="false">
+  Preload the chat panel chunk on mount instead of waiting for first open. Default is lazy — the heavy chat code (~45 KB) only downloads when the user clicks the launcher.
+</ResponseField>
+
+## Events
+
+<ResponseField name="navigate" type="(url: string) => void">
+  Emits when the AI clicks an internal markdown link in an assistant message. Wire to your router so navigations stay in-app:
+
+  ```vue
+  <MantlChat @navigate="(url) => router.push(url)" />
+  ```
+
+  External links (different origin) are opened normally regardless of this event.
+</ResponseField>
+
+<ResponseField name="token-error" type="(err: string) => void">
+  Emits when authentication fails (token fetch failure, expired JWT, 401/403 from the API). The chat hides its built-in UI on auth failure automatically — use this event to surface a custom message of your own ("Please sign in again to use the assistant") if you want.
+</ResponseField>
+
+## Auth precedence
+
+If multiple auth props are provided, `token` wins, then `getToken`, then `tokenUrl`. In practice, pick one.
+
+## Resizing
+
+Users can drag the panel's edge to resize it between 340px and 700px. The width is persisted server-side per user as a preference, so it carries across devices.
+
+## What's inside
+
+The panel renders:
+
+- A **header** with the current conversation's title (clickable to open the conversation list), a "New chat" button, an options menu (rename / delete), and a close button.
+- The **conversation history** grouped by Today / Yesterday / Earlier.
+- The **message list** with auto-scroll while the AI is responding.
+- The **input bar** with a stop button while a turn is in progress.
+
+For most apps you don't need to touch any of this. For deeper customization, see [`useMantl`](/vue/use-mantl) for the programmatic API.
+
+## Behavior notes
+
+- Open/closed state is persisted server-side per user as the `sidebar_open` preference — it carries across devices.
+- The panel self-positions with `position: fixed` against the edge of the viewport and pushes host content over via body padding (so your app content reflows around it rather than being covered).
+- The panel hides itself entirely if the SDK isn't authenticated. End-users see nothing; developers see a `console.warn`.
+
+## How it works under the hood
+
+`@getmantl/vue` is a thin Vue wrapper around the React implementation in `@getmantl/react`. The bridge lazy-loads React, ReactDOM, and the chat panel into the component's own DOM node on first mount — your Vue bundle stays small, you write Vue code, and the React internals are an invisible implementation detail. See the [package README](https://github.com/alexanderjacobsen/sidekick/tree/main/packages/vue) for the architectural details.

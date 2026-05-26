@@ -1,0 +1,114 @@
+---
+title: "Authentication"
+description: "How Mantl identifies users from your Vue app."
+---
+
+Mantl uses **short-lived JWTs** to authenticate the SDK against the hosted backend. Your project's secret key never leaves your server; the SDK only sees signed tokens.
+
+The auth model is the same across all framework bindings — the differences below are just the Vue-specific prop names.
+
+## The flow
+
+<Steps>
+  <Step title="Project creation">
+    You create a project on Mantl and get a secret key (`sk_proj_<projectId>_<secret>`). The secret is shown once — store it as an env var on your server.
+  </Step>
+  <Step title="Token generation (your server)">
+    When the SDK needs a token, your server signs a JWT with claims `{ sub: userId, proj: projectId }` using the secret as the HMAC key, with a short expiry (e.g. 24h).
+  </Step>
+  <Step title="Token delivery (the SDK)">
+    The SDK fetches the token via your `tokenUrl` (or `getToken` callback), caches it, and uses it in `Authorization: Bearer <token>` headers when calling the Mantl backend.
+  </Step>
+  <Step title="Verification (the backend)">
+    The backend looks up the project's secret from KV, verifies the JWT signature, and uses the `sub` claim as the user identity for scoping conversations and preferences.
+  </Step>
+  <Step title="Refresh">
+    The SDK auto-refreshes one minute before expiry. If the user's tab was asleep, it re-fetches on visibility change.
+  </Step>
+</Steps>
+
+## Three ways to deliver the token
+
+### 1. `tokenUrl` (most common)
+
+A URL the SDK fetches with `credentials: "include"`. The endpoint should respond with `{ token: "..." }`. Your existing session cookie authorizes the user, your route signs the JWT.
+
+```vue
+<MantlChat token-url="/api/mantl-token" />
+```
+
+See [the token endpoint guide](/react/token-endpoint) for backend implementations in Node, Python, Go, etc. The contract is framework-agnostic — same recipe whether your frontend is Vue, Angular, or React.
+
+### 2. `getToken` (custom fetcher)
+
+A callback the SDK calls. Use this when you need to set custom headers, fetch from a different origin, or integrate with a more complex auth flow.
+
+```vue
+<script setup lang="ts">
+import { MantlChat } from '@getmantl/vue';
+
+const getToken = async () => {
+  const res = await fetch('https://auth.example.com/mantl-token', {
+    headers: { 'X-API-Key': import.meta.env.VITE_API_KEY },
+  });
+  const { token } = await res.json();
+  return token;
+};
+</script>
+
+<template>
+  <MantlChat :get-token="getToken" />
+</template>
+```
+
+### 3. `token` (pre-fetched)
+
+A token you already have. Useful when your auth flow already produced one before mounting the chat.
+
+```vue
+<MantlChat :token="myToken" />
+```
+
+The SDK won't auto-refresh in this mode (it doesn't know how to re-fetch), so use `tokenUrl` or `getToken` for long-running sessions.
+
+## Multi-tenant scoping
+
+The token's `sub` claim is your application's user identity. Mantl uses it as the *only* thing scoping conversations:
+
+- User A opens the chat → conversations scoped to user A.
+- User A logs out, user B logs in → token has `sub: B`, conversations scoped to B.
+- User A logs back in → token has `sub: A` again, original conversations come back.
+
+If you change the `sub` for the same person across sessions (e.g. you reissue user IDs), their chat history won't carry over. Use a stable identifier — UUID, email, whatever your auth system gives you.
+
+## When auth fails
+
+The SDK fails closed: if it can't authenticate, it hides itself entirely. End-users see no chat panel, no launcher, no error message — none of the plumbing they couldn't act on anyway. Developers see one `console.warn` with the underlying reason.
+
+This covers all of:
+
+- `tokenUrl` / `getToken` throws or returns a non-OK response.
+- The token signs and fetches fine, but the Mantl backend rejects it (401/403) — e.g. wrong signing key, expired JWT, revoked project.
+- Token expires mid-session and the auto-refresh fails.
+
+If you want to show your own UI in the broken state — for example a banner asking the user to re-authenticate — listen to the `token-error` event:
+
+```vue
+<script setup lang="ts">
+import { MantlChat } from '@getmantl/vue';
+
+function onAuthBroken(err: string) {
+  // show your own banner / toast
+  console.warn('mantl auth failed:', err);
+}
+</script>
+
+<template>
+  <MantlChat
+    token-url="/api/mantl-token"
+    @token-error="onAuthBroken"
+  />
+</template>
+```
+
+The built-in `<MantlChat>` panel handles all of this automatically — you only need `token-error` if you want to show a custom recovery UI of your own.

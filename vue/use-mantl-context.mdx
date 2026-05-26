@@ -1,0 +1,97 @@
+---
+title: "useMantlContext"
+description: "Attach page-specific context to the next user message, declaratively."
+---
+
+`useMantlContext` is a Vue composable that injects a string of context into the AI's view of the next user message. The context is set when the component mounts and automatically cleared when it unmounts — so as the user navigates around your app, the context follows what's actually on screen.
+
+It's the Vue equivalent of React's `useMantlContext` hook (and of Angular's `[mantlContext]` directive).
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useMantlContext } from '@getmantl/vue';
+
+const props = defineProps<{ product: Product }>();
+
+useMantlContext(
+  computed(() =>
+    `User is viewing product: ${props.product.name} ` +
+    `(id: ${props.product.id}, price: $${props.product.price})`,
+  ),
+);
+</script>
+
+<template>
+  <!-- product details -->
+</template>
+```
+
+When the user opens the chat from this page and types "How much is this?", the AI sees both the user's message *and* the context about which product they're viewing, so it can answer specifically.
+
+## Signature
+
+```ts
+function useMantlContext(
+  source: MaybeRefOrGetter<string | null | undefined>
+): void
+```
+
+Accepts:
+
+- A plain `string` (or `null`/`undefined`) — set once on mount.
+- A `Ref<string | null | undefined>` — re-runs the context update whenever the ref's value changes.
+- A getter `() => string | null | undefined` — re-runs whenever any reactive dependency inside the getter changes (the common case for `computed`-style usage).
+
+## How it's delivered
+
+The context is added as a hidden `<context>...</context>` block at the top of the next user message before it's sent to the model. The user doesn't see it in their message bubble; only the model does.
+
+Context attaches only to the *next* message after it's set — past messages keep whatever context was active when they were sent.
+
+## Reactive context
+
+The source is reactive — pass a getter or a ref and the context updates whenever its dependencies change:
+
+```ts
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+useMantlContext(() => `User is on ${route.path}`);
+```
+
+When the route changes, the next message picks up the new value.
+
+## Combining with tools
+
+Context is for **passive awareness** (what page am I on, what's the user looking at). For active interactions, register tools so the AI can do things, not just know things.
+
+```vue
+<script setup lang="ts">
+import { useMantlContext, useMantlTools, type VueClientTools } from '@getmantl/vue';
+
+const props = defineProps<{ product: Product }>();
+
+useMantlContext(() => `Viewing product: ${props.product.name} (id: ${props.product.id})`);
+
+const productTools: VueClientTools = {
+  addToCart: { /* ... */ },
+};
+useMantlTools(productTools);
+</script>
+```
+
+Now the user can say "add this to my cart" and the AI knows both *what* "this" refers to (from context) and *how* to do it (from the tool registered by `useMantlTools`).
+
+## Scope
+
+Only one context can be active at a time. If multiple `useMantlContext` calls are mounted simultaneously (e.g. nested components both set context), whichever was set most recently wins — `useMantlContext` is not stacked or merged. Model the page conceptually: usually a single route-level component owns the context.
+
+## Tips
+
+- **Keep it short.** Long context blocks bloat every prompt and waste tokens. Aim for one or two sentences.
+- **Be specific.** "On product page" is less useful than "Viewing product: Wireless Headphones (id: ord-001, $79.99)".
+- **Include identifiers.** If your tools take IDs as input, put them in the context so the AI can pass them through.
+- **Don't put sensitive data in context.** Anything in context goes to the LLM provider. Don't include secrets, PII, etc.

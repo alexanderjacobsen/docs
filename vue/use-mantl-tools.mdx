@@ -1,0 +1,151 @@
+---
+title: "useMantlTools"
+description: "Register tools that follow a component's lifecycle."
+---
+
+`useMantlTools` is a Vue composable that registers a set of tools while the calling component is alive. When the component unmounts (route navigation, `v-if` toggle, etc.), the tools are automatically unregistered.
+
+It's the Vue equivalent of React's `useMantlTools` hook (and of Angular's `[mantlTools]` directive).
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { useMantlTools, type VueClientTools } from '@getmantl/vue';
+
+const props = defineProps<{ product: Product }>();
+
+const productTools: VueClientTools = {
+  addToCart: {
+    description: 'Add the current product to the cart',
+    parameters: { type: 'object', properties: {}, required: [] },
+    execute: () => {
+      cart.add(props.product);
+      return { success: true };
+    },
+  },
+};
+
+useMantlTools(productTools);
+</script>
+
+<template>
+  <!-- product details -->
+</template>
+```
+
+While this component is on screen, the AI sees `addToCart` as an available tool. When the user navigates away, it's automatically unregistered.
+
+## Signature
+
+```ts
+function useMantlTools(
+  source: MaybeRefOrGetter<VueClientTools | null | undefined>
+): void
+```
+
+Accepts:
+
+- A plain `VueClientTools` record — registered once on mount.
+- A `Ref<VueClientTools | null>` — re-registers whenever the ref's value changes.
+- A getter — re-registers whenever any reactive dependency inside the getter changes.
+
+Passing `null` or `undefined` unregisters the tools without unmounting the component.
+
+## How merging works
+
+Tools registered via `useMantlTools` are merged with whatever you pass to `<MantlChat>`'s top-level `:tools` prop.
+
+```vue
+<MantlChat :tools="globalTools" />
+
+<!-- Elsewhere in the app: -->
+<ProductPage />
+<!-- ProductPage internally calls useMantlTools(productTools) -->
+```
+
+When the product page is mounted, the AI sees `globalTools` ∪ `productTools`. When it's unmounted, only `globalTools` remain.
+
+## Multiple components, multiple tool sets
+
+Each `useMantlTools` call gets its own internally-generated id, so siblings can each register their own tools without conflict.
+
+```vue
+<FilterBar />     <!-- calls useMantlTools(filterTools) -->
+<ProductDetail /> <!-- calls useMantlTools(detailTools) -->
+```
+
+Both mount → AI sees `filterTools` ∪ `detailTools` plus globals. Either unmounts → its contributions disappear.
+
+## Reactive tool sets
+
+Pass a `computed` (or any getter) when the available tools depend on state:
+
+```vue
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { useMantlTools, type VueClientTools } from '@getmantl/vue';
+
+const filter = ref<'all' | 'active'>('all');
+
+const tools = computed<VueClientTools>(() => ({
+  setFilter: {
+    description: `Switch the list filter (current: ${filter.value})`,
+    parameters: {
+      type: 'object',
+      properties: { v: { type: 'string' } },
+      required: ['v'],
+    },
+    execute: ({ v }: { v: string }) => {
+      filter.value = v as 'all' | 'active';
+      return { success: true };
+    },
+  },
+}));
+
+useMantlTools(tools);
+</script>
+```
+
+When `filter.value` changes, the description updates and the tool is re-registered transparently.
+
+## Conditional registration
+
+Return `null` from a getter to unregister without unmounting the component — useful when tools should only exist under certain conditions:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useMantlTools, type VueClientTools } from '@getmantl/vue';
+
+const props = defineProps<{ page: 'orders' | 'inventory' }>();
+
+useMantlTools(
+  computed<VueClientTools | null>(() =>
+    props.page === 'orders'
+      ? { openOrder: { /* ... */ } }
+      : null,
+  ),
+);
+</script>
+```
+
+## Capturing reactive state
+
+Tool `execute` functions are closures captured at registration time. If you reference local refs or props directly, Vue's reactivity keeps the closure live — reading `ref.value` or `props.foo` inside `execute` gives you the current value:
+
+```ts
+const count = ref(0);
+
+useMantlTools({
+  getCount: {
+    description: 'Get the current count',
+    parameters: { type: 'object', properties: {} },
+    execute: () => ({ count: count.value }),  // always current
+  },
+});
+```
+
+This works because the closure re-reads `count.value` each time it's invoked. The pitfall is closing over a *snapshot* — e.g. destructuring a prop at module scope, or reading `count.value` once outside `execute`. Inside `execute`, always read through the reactive source.
+
+If you need entirely *different* tools when state changes (not just different values they return), use `computed` as shown in [Reactive tool sets](#reactive-tool-sets) above.

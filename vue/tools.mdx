@@ -1,0 +1,286 @@
+---
+title: "Defining Tools"
+description: "Give the AI functions it can call to do real work in your app."
+---
+
+Tools are the heart of Mantl. They turn the chat from "Q&A" into "an assistant that can actually navigate, search, mutate, and read state." A tool is a function the AI decides to call when it judges it useful for the user's request.
+
+## Anatomy of a tool
+
+```ts
+import { z } from 'zod';
+import type { ClientTool } from '@getmantl/vue';
+import { useRouter } from 'vue-router';
+
+const router = useRouter();
+
+const navigateTo: ClientTool = {
+  description: 'Navigate the user to a page in the app',
+  parameters: z.object({
+    path: z.string().describe('The path to navigate to, e.g. /orders/42'),
+  }),
+  execute: async ({ path }) => {
+    await router.push(path);
+    return { success: true };
+  },
+};
+```
+
+Three parts:
+
+- **`description`** — natural-language explanation of what the tool does. The model uses this to decide when to call it. Be specific.
+- **`parameters`** — a [Zod](https://zod.dev) schema or plain JSON Schema describing the tool's input. With Zod you get TypeScript inference inside `execute` for free, plus runtime validation before your code runs.
+- **`execute`** — the function that actually runs in the browser when the AI calls the tool. Receives the validated input and returns whatever the AI should see.
+
+## Registering tools
+
+Two ways:
+
+### Globally on `<MantlChat>`
+
+For tools available everywhere in your app:
+
+```vue
+<MantlChat token-url="/api/token" :tools="globalTools" />
+```
+
+```ts
+const globalTools: ClientTools = {
+  navigateTo,
+  searchProducts,
+  getCurrentUser,
+};
+```
+
+### Locally via `useMantlTools`
+
+For tools that depend on a specific component's state, register them via the composable. They're added when the component mounts and removed when it's destroyed.
+
+```vue
+<script setup lang="ts">
+import { useMantlTools, type VueClientTools } from '@getmantl/vue';
+
+const productTools: VueClientTools = {
+  /* ... */
+};
+useMantlTools(productTools);
+</script>
+```
+
+See [`useMantlTools`](/vue/use-mantl-tools) for the full reference.
+
+The two sets are merged. If the user is on the products page, the AI sees both global tools and the local ones.
+
+## TypeScript and input typing
+
+The `ClientTool` interface uses `unknown` for the input parameter to stay schema-agnostic. Inside `execute`, cast to the shape implied by your `parameters`:
+
+```ts
+execute: (input: unknown) => {
+  const { path } = input as { path: string };
+  // ...
+}
+```
+
+The model validates against your `parameters` schema before calling, so by the time `execute` runs the input matches the shape. The cast is just for TypeScript.
+
+If you prefer compile-time typing, use a tagged shape:
+
+```ts
+type NavInput = { path: string };
+const navigateTo: ClientTool<NavInput> = {
+  description: '...',
+  parameters: { /* JSON Schema */ },
+  execute: ({ path }) => { /* typed */ },
+};
+```
+
+## Returning data from a tool
+
+Whatever your `execute` returns becomes the model's view of the result. Return structured data — objects, arrays, JSON — when you want the model to reason about it:
+
+```ts
+const getOrders: ClientTool = {
+  description: 'Get all orders for the current user',
+  parameters: { type: 'object', properties: {}, required: [] },
+  execute: async () => {
+    const res = await fetch('/api/orders');
+    return await res.json();
+  },
+};
+```
+
+The model sees the JSON and can summarize, filter, count, etc.
+
+If your tool just performs an action (navigate, mutate, dismiss), return a small acknowledgement so the model knows it succeeded:
+
+```ts
+return { success: true };
+```
+
+## Errors
+
+If your `execute` throws, Mantl catches it and reports the error to the model as a regular result, so the model can react ("Sorry, I couldn't fetch your orders — would you like me to try again?"). You don't need a try/catch unless you want a custom error message:
+
+```ts
+execute: async (input: unknown) => {
+  const { id } = input as { id: string };
+  try {
+    return await deleteOrder(id);
+  } catch (err) {
+    return { success: false, message: 'Order not found' };
+  }
+}
+```
+
+## Confirmation flow
+
+Some tools should ask the user before running — destructive actions, payments, anything sensitive. Add `requiresConfirmation: true`:
+
+```ts
+const deleteOrder: ClientTool = {
+  description: 'Delete an order by ID',
+  parameters: {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+    required: ['id'],
+  },
+  requiresConfirmation: true,
+  execute: async (input: unknown) => {
+    const { id } = input as { id: string };
+    await fetch(`/api/orders/${id}`, { method: 'DELETE' });
+    return { deleted: id };
+  },
+};
+```
+
+The user will see an "Approve / Deny" prompt in the chat before the tool runs.
+
+## Customizing the tool call display
+
+Tool calls render inline in the chat as a small "tool chip" — an icon, a label, and a status line. Two fields on a tool let you tailor that:
+
+| Field | Type | What it changes |
+| --- | --- | --- |
+| `displayName` | `string` | The label on the chip. Defaults to a humanized form of the tool key (`openOrder` → "open order"). |
+| `formatOutput` | `(output) => string` | The one-line status shown after the tool runs, in place of the default `"<name> completed"`. |
+
+```ts
+const productTools: ClientTools = {
+  searchProducts: {
+    description: 'Search the catalog',
+    parameters: z.object({ query: z.string() }),
+    displayName: 'Search products',
+    formatOutput: (output) => `Found ${(output as { results: unknown[] }).results.length} matches`,
+    execute: async ({ query }) => {
+      const res = await fetch(`/api/products?q=${query}`);
+      return { results: await res.json() };
+    },
+  },
+};
+```
+
+### Rendering details with a Vue component
+
+When a tool finishes, you can show a richer card below the chip that visualises its input + output. `VueClientTool` exposes two fields for this:
+
+| Field | Type | What it does |
+| --- | --- | --- |
+| `detailsComponent` | `Component` | A Vue component (typically a `.vue` SFC) that declares `input` and `output` props. Rendered in an expandable panel below the chip. |
+| `defaultExpanded` | `boolean` | Open the panel by default instead of waiting for a click. Defaults to `false`. |
+
+The component is mounted with `createApp` using the host app's `appContext` so Pinia, Vue Router, i18n, globally-registered components, and other plugins flow through — everything you'd expect works exactly as in any other Vue component in your app. There's no React anywhere in the API you write.
+
+```vue OrderDetails.vue
+<script setup lang="ts">
+interface OrderInput { id: string }
+interface OrderOutput {
+  id: string;
+  customer: string;
+  total: number;
+  items: Array<{ name: string; qty: number }>;
+}
+
+defineProps<{
+  input?: OrderInput;
+  output?: OrderOutput;
+}>();
+</script>
+
+<template>
+  <div class="order-card">
+    <strong>Order {{ output?.id }}</strong>
+    <span>{{ output?.customer }}</span>
+    <ul>
+      <li v-for="item in output?.items ?? []" :key="item.name">
+        {{ item.name }} × {{ item.qty }}
+      </li>
+    </ul>
+    <div>Total: ${{ output?.total }}</div>
+  </div>
+</template>
+```
+
+```ts orders-tools.ts
+import { z } from 'zod';
+import type { VueClientTools } from '@getmantl/vue';
+import OrderDetails from './OrderDetails.vue';
+
+export const ordersTools: VueClientTools = {
+  openOrder: {
+    description: 'Open an order by id',
+    parameters: z.object({ id: z.string() }),
+    execute: async ({ id }) => getOrder(id),
+    detailsComponent: OrderDetails,
+    defaultExpanded: true,
+  },
+};
+```
+
+Use `VueClientTools` (not `ClientTools`) as the tool record's type when any entry uses `detailsComponent` — that's the type that knows about the field.
+
+A few notes on how the mount works:
+
+- **Props are set once at mount.** When the tool reaches the `output-available` state, `input` and `output` are stable, so they're passed to `createApp` at mount and aren't updated mid-stream. Components don't get reactive updates from the chat after that point.
+- **Lifecycle is normal.** `onMounted`, `onBeforeUnmount`, `watch`, `computed`, animations, transitions — all behave as anywhere else. The component is unmounted via `app.unmount()` when the chat is closed or the conversation is cleared.
+- **`emit` doesn't go anywhere.** The chat doesn't subscribe to events from your details component — treat it as a pure display surface.
+
+<Note>
+For very advanced cases, the underlying `ClientTool` also accepts a raw `details: (input, output) => unknown` callback. `@getmantl/vue` wraps `detailsComponent` into that internally; you almost never need to use it directly.
+</Note>
+
+## Schema choices
+
+Mantl accepts both Zod schemas and plain JSON Schema for `parameters`.
+
+<CodeGroup>
+```ts Zod
+import { z } from 'zod';
+
+parameters: z.object({
+  query: z.string().describe('Search query'),
+  limit: z.number().int().min(1).max(100).default(10),
+})
+```
+
+```ts JSON Schema
+parameters: {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'Search query' },
+    limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
+  },
+  required: ['query'],
+}
+```
+</CodeGroup>
+
+Zod is recommended — you get TypeScript inference on the `execute` argument for free (no manual `input as { … }` cast) and runtime validation before your code runs. Just install it (`npm install zod`); the rest is automatic. JSON Schema is fine if you'd rather not add the dep.
+
+## Tips for good tools
+
+- **Be specific in descriptions.** "Get user's data" is bad; "Fetch the current user's recent orders, last 30 days" is good.
+- **Use `description` on every parameter.** It's how the AI knows what each field means.
+- **Return small, focused payloads.** Don't dump 500 rows when 10 will do — the model will use them all in context.
+- **Make tools idempotent where possible.** The AI may retry. A `createOrder` that creates duplicates on retry is bad; one that requires an idempotency key is good.
+- **Pull dependencies from composables, not from closures.** Reach for `useRouter`, `useStore`, your composables inside `<script setup>` and let `execute` call them — it keeps tools testable and avoids stale captures.

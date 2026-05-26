@@ -1,0 +1,237 @@
+---
+title: "Quickstart (Vue)"
+description: "Get Mantl running in your Vue 3 app in five minutes."
+icon: "rocket"
+---
+
+This guide shows the smallest viable Mantl integration in Vue: install the SDK, register a project, wire up auth, drop the chat into your app. Requires Vue 3.4+.
+
+## 1. Install the SDK
+
+```bash
+npm install @getmantl/vue
+```
+
+That installs `@getmantl/vue` along with `@getmantl/react` + `@getmantl/core` transitively, plus its `vue`, `react`, and `react-dom` peer dependencies (auto-installed by npm 7+; add them yourself if your package manager doesn't auto-install peers). You only need to import from `@getmantl/vue` — the rest is an implementation detail.
+
+## 2. Create a project
+
+Sign in to the [Mantl dashboard](https://getmantl.com/dashboard), create a project, and generate an API key. The key looks like `sk_proj_<projectId>_<secret>` and is shown **once** — save it immediately.
+
+## 3. Add a token endpoint
+
+The SDK never sees your project's secret key. Instead, your server signs a short-lived JWT and the SDK fetches that. The contract is the same regardless of backend:
+
+- **Algorithm**: HMAC-SHA256 (`HS256`)
+- **Signing key**: your full project secret (`sk_proj_...`), used as raw HMAC bytes
+- **Claims**: `sub` (your user id), `proj` (the project id, parsed from the secret), `iat`, `exp`. Optional `name` (displayed in the chat header).
+- **Response**: JSON `{ "token": "<jwt>" }`
+
+Pick whatever JWT library your backend stack uses. Common examples:
+
+<CodeGroup>
+
+```ts Express (Node.js)
+import express from "express";
+import jwt from "jsonwebtoken";
+
+const SECRET = process.env.MANTL_SECRET_KEY!;
+const PROJECT_ID = SECRET.match(/^sk_proj_([a-z0-9-]+?)_/)![1];
+
+const app = express();
+
+app.get("/api/mantl-token", (req, res) => {
+  const token = jwt.sign(
+    { sub: req.user.id, proj: PROJECT_ID, name: req.user.name },
+    SECRET,
+    { algorithm: "HS256", expiresIn: "24h" },
+  );
+  res.json({ token });
+});
+
+app.listen(3000);
+```
+
+```python FastAPI (Python)
+import os
+import re
+from datetime import datetime, timedelta, timezone
+import jwt  # pip install PyJWT
+from fastapi import FastAPI, Depends
+
+SECRET = os.environ["MANTL_SECRET_KEY"]
+PROJECT_ID = re.match(r"^sk_proj_([a-z0-9-]+?)_", SECRET).group(1)
+
+app = FastAPI()
+
+@app.get("/api/mantl-token")
+def get_token(user = Depends(get_current_user)):
+    now = datetime.now(tz=timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": user.id,
+            "proj": PROJECT_ID,
+            "name": user.name,
+            "iat": now,
+            "exp": now + timedelta(hours=24),
+        },
+        SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token}
+```
+
+```go Go (net/http)
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+    "os"
+    "regexp"
+    "time"
+
+    "github.com/golang-jwt/jwt/v5"
+)
+
+var secret = os.Getenv("MANTL_SECRET_KEY")
+var projectID = regexp.MustCompile(`^sk_proj_([a-z0-9-]+?)_`).
+    FindStringSubmatch(secret)[1]
+
+func tokenHandler(w http.ResponseWriter, r *http.Request) {
+    userID := r.Context().Value("userID").(string)
+    t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+        "sub":  userID,
+        "proj": projectID,
+        "iat":  time.Now().Unix(),
+        "exp":  time.Now().Add(24 * time.Hour).Unix(),
+    })
+    signed, _ := t.SignedString([]byte(secret))
+    _ = json.NewEncoder(w).Encode(map[string]string{"token": signed})
+}
+```
+
+</CodeGroup>
+
+Set `MANTL_SECRET_KEY` in your server's environment. The `sub` claim should be your authenticated user's id from your session / auth provider.
+
+<Tip>
+  The `sub` claim is your application's user id. Mantl uses it to scope conversations and preferences per user — if you change it across sessions, history won't carry over.
+</Tip>
+
+## 4. Drop in the chat
+
+Import `MantlChat` in a host component whose lifetime spans your chat sessions (the app root is the simplest choice — see the note below) and add `<MantlChat>` to the template:
+
+```vue
+<!-- src/App.vue -->
+<script setup lang="ts">
+import { MantlChat } from '@getmantl/vue';
+import { useRouter } from 'vue-router';
+
+const router = useRouter();
+</script>
+
+<template>
+  <router-view />
+  <MantlChat
+    token-url="/api/mantl-token"
+    @navigate="(url) => router.push(url)"
+  />
+</template>
+```
+
+That's it. Run your dev server, click the sparkle launcher in the corner, and chat.
+
+<Warning>
+  **Mount `<MantlChat>` in a host component whose lifetime spans your chat sessions** — the app root above works for most apps. The real rule isn't "outside `<router-view>`"; it's "in a parent that survives the navigations you care about." If `<MantlChat>` lives inside a route's own component template, it unmounts and remounts on every navigation, losing conversation state and re-running the token fetch + React chunk download. Any longer-lived host (the app root, a persistent layout component) works fine.
+</Warning>
+
+## 5. Add a tool (optional)
+
+A chat without tools is just an LLM. Give it tools that read or modify your app. Install Zod for clean schemas + type inference (`npm install zod`):
+
+```vue
+<script setup lang="ts">
+import { MantlChat, type VueClientTools } from '@getmantl/vue';
+import { useRouter } from 'vue-router';
+import { z } from 'zod';
+
+const router = useRouter();
+
+const tools: VueClientTools = {
+  navigateTo: {
+    description: 'Navigate the user to a page in the app',
+    parameters: z.object({
+      path: z.string().describe('Path to navigate to, e.g. /orders/42'),
+    }),
+    execute: async ({ path }) => {
+      await router.push(path);
+      return { success: true };
+    },
+  },
+};
+</script>
+
+<template>
+  <router-view />
+  <MantlChat
+    token-url="/api/mantl-token"
+    :tools="tools"
+    @navigate="(url) => router.push(url)"
+  />
+</template>
+```
+
+The AI can now call `navigateTo` whenever it judges the user wants to go somewhere. The Zod schema gives you typed `path` in `execute` and runtime-validates the AI's input before your code runs. Plain JSON Schema works too if you prefer not to add Zod — see [Defining Tools](/vue/tools) for both shapes.
+
+## 6. Per-page context and tools
+
+For tools and context that only make sense on certain routes — "this product page knows how to add items to the cart", "this admin page knows how to suspend users" — register them at the component level via composables:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import {
+  useMantlContext,
+  useMantlTools,
+  type VueClientTools,
+} from '@getmantl/vue';
+
+const props = defineProps<{ product: Product }>();
+
+useMantlContext(
+  computed(() => `Viewing product: ${props.product.name} (id: ${props.product.id})`),
+);
+
+const productTools: VueClientTools = {
+  addToCart: { /* ... */ },
+};
+useMantlTools(productTools);
+</script>
+
+<template>
+  <!-- product details -->
+</template>
+```
+
+The composables auto-register when the component mounts and auto-unregister when it's destroyed (route navigation, `v-if` toggle, etc.). The AI sees the page-specific context with every new message and the page-specific tools as available actions — and forgets about them when the user navigates away.
+
+See [`useMantlContext`](/vue/use-mantl-context) and [`useMantlTools`](/vue/use-mantl-tools) for the full reference.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Define real tools" icon="wrench" href="/vue/tools">
+    Tools with proper schemas, confirmations, and Vue components for custom result rendering.
+  </Card>
+  <Card title="useMantl" icon="code" href="/vue/use-mantl">
+    Imperative access to context and tools from anywhere in your app.
+  </Card>
+  <Card title="Auth options" icon="key" href="/vue/auth-overview">
+    Token URLs, custom fetchers, error handling.
+  </Card>
+  <Card title="Component reference" icon="box" href="/vue/mantl-chat">
+    All props and events of `<MantlChat>`.
+  </Card>
+</CardGroup>
