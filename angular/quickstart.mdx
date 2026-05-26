@@ -12,7 +12,7 @@ This guide shows the smallest viable Mantl integration in Angular: install the S
 npm install @getmantl/angular
 ```
 
-That installs `@getmantl/angular` and pulls in its dependencies (`@getmantl/react`, `@getmantl/core`, `react`, `react-dom`) transitively. You only need the one package — the internals are an implementation detail.
+That installs `@getmantl/angular` along with `@getmantl/react` + `@getmantl/core` transitively, plus its `react` / `react-dom` peer dependencies (auto-installed by npm 7+; add them yourself if your package manager doesn't auto-install peers). You only need to import from `@getmantl/angular` — the rest is an implementation detail.
 
 ## 2. Create a project
 

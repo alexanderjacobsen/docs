@@ -172,9 +172,76 @@ productTools: ClientTools = {
 };
 ```
 
-### About custom-rendered details
+### Rendering details with an Angular component
 
-The underlying `ClientTool` type also has `details: (input, output) => …` and `defaultExpanded: boolean` fields, which render a custom node in an expandable panel below the chip. **Today this only works if `details` returns a React `ReactNode`** — `@getmantl/angular` mounts the React chat panel internally, and the details renderer runs inside that React tree. There's no Angular `TemplateRef` bridge yet, so using `details` from Angular means writing React (e.g. via `React.createElement`). For now, stick to `displayName` and `formatOutput`; an Angular-native renderer is planned.
+When a tool finishes, you can show a richer card below the chip that visualises its input + output. `AngularClientTool` exposes two fields for this:
+
+| Field | Type | What it does |
+| --- | --- | --- |
+| `detailsComponent` | `Type<DetailsComponent>` | An Angular component class with `@Input() input` and `@Input() output`. Rendered in an expandable panel below the chip. |
+| `defaultExpanded` | `boolean` | Open the panel by default instead of waiting for a click. Defaults to `false`. |
+
+The component is instantiated with Angular's `createComponent` using the host app's `EnvironmentInjector`, so DI, services, signals, `RouterLink`, theming — everything you'd expect — work exactly as in any other Angular component in your app. There's no React anywhere in the API you write.
+
+```ts order-details.component.ts
+import { Component, Input } from '@angular/core';
+
+interface OrderInput { id: string; }
+interface OrderOutput {
+  id: string;
+  customer: string;
+  total: number;
+  items: Array<{ name: string; qty: number }>;
+}
+
+@Component({
+  selector: 'app-order-details',
+  standalone: true,
+  template: `
+    <div class="order-card">
+      <strong>Order {{ output?.id }}</strong>
+      <span>{{ output?.customer }}</span>
+      <ul>
+        @for (item of output?.items ?? []; track item.name) {
+          <li>{{ item.name }} × {{ item.qty }}</li>
+        }
+      </ul>
+      <div>Total: \${{ output?.total }}</div>
+    </div>
+  `,
+})
+export class OrderDetailsComponent {
+  @Input() input?: OrderInput;
+  @Input() output?: OrderOutput;
+}
+```
+
+```ts orders.component.ts
+import { AngularClientTools } from '@getmantl/angular';
+import { OrderDetailsComponent } from './order-details.component';
+
+ordersTools: AngularClientTools = {
+  openOrder: {
+    description: "Open an order by id",
+    parameters: z.object({ id: z.string() }),
+    execute: async ({ id }) => this.orders.getOrder(id),
+    detailsComponent: OrderDetailsComponent,
+    defaultExpanded: true,
+  },
+};
+```
+
+Use `AngularClientTools` (not `ClientTools`) as the tool record's type when any entry uses `detailsComponent` — that's the type that knows about the field.
+
+A few notes on how the mount works:
+
+- **Inputs are set once at mount.** When the tool reaches the `output-available` state, `input` and `output` are stable, so they're passed via `setInput` exactly once. Components don't get update notifications mid-stream.
+- **Lifecycle is normal.** `ngOnInit`, `ngOnDestroy`, `OnPush`, signals, animations all behave as anywhere else. The component is destroyed via `componentRef.destroy()` when the chat is closed or the conversation is cleared.
+- **`@Output()` events don't go anywhere.** The chat doesn't subscribe to outputs from your details component — treat it as a pure display surface.
+
+<Note>
+For very advanced cases, the underlying `ClientTool` also accepts a raw `details: (input, output) => unknown` callback. `@getmantl/angular` wraps `detailsComponent` into that internally; you almost never need to use it directly.
+</Note>
 
 ## Schema choices
 
