@@ -177,7 +177,7 @@ Set `MANTL_SECRET_KEY` in your server's environment. The `sub` claim should be y
 
 ## 4. Drop in the chat
 
-Import `MantlChatComponent` in your root component (next to `<router-outlet>`, **not** inside it — see the note below) and add `<mantl-chat>` to the template:
+Import `MantlChatComponent` in a host component whose lifetime spans your chat sessions (the app root is the simplest choice — see the note below) and add `<mantl-chat>` to the template:
 
 ```ts
 // src/app/app.component.ts
@@ -205,7 +205,7 @@ export class AppComponent {
 That's it. Run your dev server, click the sparkle launcher in the corner, and chat.
 
 <Warning>
-  **Mount `<mantl-chat>` at the app root, outside `<router-outlet>`.** Putting it inside the outlet (or inside a route component) means the chat unmounts and remounts on every navigation — losing conversation state, re-fetching the token, re-downloading the chat panel chunk. The pattern above keeps the chat persistent across navigations.
+  **Mount `<mantl-chat>` in a host component whose lifetime spans your chat sessions** — the app root above works for most apps. The real rule isn't "outside `<router-outlet>`"; it's "in a parent that survives the navigations you care about." If `<mantl-chat>` lives inside a route's own component template, it unmounts and remounts on every navigation, losing conversation state and re-running the token fetch + React chunk download. Any longer-lived host (the app root, a persistent layout component) works fine.
 </Warning>
 
 ## 5. Add a tool (optional)
