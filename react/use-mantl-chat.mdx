@@ -3,7 +3,7 @@ title: "useMantlChat"
 description: "Direct access to the chat — messages, streaming state, send and stop."
 ---
 
-`useMantlChat` is the lower-level hook the built-in `MantlSidebar` uses internally. Use it when you want to build a different chat UI on top of Mantl's state — e.g. a full-screen layout, an inline chat widget, or a different message rendering style.
+`useMantlChat` is the lower-level hook the built-in chat panel (the one `MantlLayout` renders) uses internally. Use it when you want to build a different chat UI on top of Mantl's state — e.g. a full-screen layout, an inline chat widget, or a different message rendering style.
 
 ## Usage
 
@@ -141,4 +141,4 @@ export default function App() {
 }
 ```
 
-You can mix and match — `MantlSidebar` for the floating widget, `useMantlChat` for an inline view of the same conversation, both backed by the same provider.
+You can mix and match — `MantlLayout` for the docked panel, `useMantlChat` for an inline view of the same conversation, both backed by the same provider.

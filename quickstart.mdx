@@ -169,24 +169,27 @@ Set `MANTL_SECRET_KEY` in your server's environment (e.g. `.env.local`, your pla
   The `sub` claim is your application's user id. Mantl uses it to scope conversations and preferences per user — if you change it across sessions, history won't carry over.
 </Tip>
 
-## 4. Drop in the sidebar
+## 4. Drop in the layout
 
 ```tsx app/page.tsx
 "use client";
 
-import { MantlProvider, MantlSidebar } from "@getmantl/react";
+import { MantlProvider, MantlLayout } from "@getmantl/react";
 
 export default function Home() {
   return (
     <MantlProvider tokenUrl="/api/token">
-      <main>
-        {/* your app */}
-      </main>
-      <MantlSidebar position="right" />
+      <MantlLayout position="right" style={{ height: "100vh" }}>
+        <main>
+          {/* your app */}
+        </main>
+      </MantlLayout>
     </MantlProvider>
   );
 }
 ```
+
+`MantlLayout` wraps the content the chat panel should dock beside — when it opens, it pushes your content aside instead of overlapping it. See [MantlLayout](/react/layout) for the full-page mode and other options.
 
 That's it. Open the page, click the sparkle launcher in the corner, and chat.
 

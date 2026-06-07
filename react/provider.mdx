@@ -3,18 +3,19 @@ title: "MantlProvider"
 description: "The React context provider that owns chat state and authentication."
 ---
 
-`MantlProvider` is the root component for any Mantl integration. Wrap your app (or any subtree that should have access to the chat) in it. Everything else — the sidebar, hooks, tools — reads from this context.
+`MantlProvider` is the root component for any Mantl integration. Wrap your app (or any subtree that should have access to the chat) in it. Everything else — the layout, hooks, tools — reads from this context.
 
 ## Usage
 
 ```tsx
-import { MantlProvider, MantlSidebar } from "@getmantl/react";
+import { MantlProvider, MantlLayout } from "@getmantl/react";
 
 export default function App({ children }) {
   return (
     <MantlProvider tokenUrl="/api/token">
-      {children}
-      <MantlSidebar />
+      <MantlLayout style={{ height: "100vh" }}>
+        {children}
+      </MantlLayout>
     </MantlProvider>
   );
 }

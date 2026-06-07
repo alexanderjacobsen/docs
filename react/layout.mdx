@@ -1,0 +1,142 @@
+---
+title: "MantlLayout"
+description: "Docks the chat panel beside your content and pushes it aside when open."
+---
+
+`MantlLayout` is the component that puts the chat on screen. Wrap the area that should have the sidebar in it — when the panel opens, it docks to the side and *pushes* the wrapped content instead of overlapping it. It also renders the floating launcher button and manages the panel's open/closed state (persisted as a user preference).
+
+## Usage
+
+```tsx
+import { MantlProvider, MantlLayout } from "@getmantl/react";
+
+<MantlProvider tokenUrl="/api/token">
+  <MantlLayout position="right" style={{ height: "100vh" }}>
+    <main>{/* your app */}</main>
+  </MantlLayout>
+</MantlProvider>
+```
+
+Keep `MantlProvider` high in the tree so auth and chat state persist, and place `MantlLayout` around the region the panel should dock beside.
+
+## Two modes
+
+<Tabs>
+  <Tab title="Scoped (with children)">
+    When you pass children, the layout is scoped to that container: the panel and the push stay inside it. The layout renders a flex container that fills its parent (`height: 100%` / `width: 100%`) — size it via `style` or `className`.
+
+    ```tsx
+    <MantlLayout position="right" style={{ height: "100vh" }}>
+      <YourApp />
+    </MantlLayout>
+    ```
+
+    Use this when the chat should dock beside a specific frame — e.g. inside your app shell, below a fixed nav bar.
+  </Tab>
+  <Tab title="Full-page (no children)">
+    When you render it without children, the panel docks to the viewport edge with `position: fixed` and pushes the *whole page* by padding `document.body`.
+
+    ```tsx
+    <MantlProvider tokenUrl="/api/token">
+      <main>{/* your app, rendered elsewhere */}</main>
+      <MantlLayout position="right" />
+    </MantlProvider>
+    ```
+
+    Use this for a simple drop-in over an entire page, or when the surrounding app isn't React (it's what the Angular bridge uses).
+  </Tab>
+</Tabs>
+
+## Props
+
+<ResponseField name="children" type="ReactNode">
+  The content the panel docks beside and pushes when open. Omit it for full-page mode (see above).
+</ResponseField>
+
+<ResponseField name="position" type='"left" | "right"' default='"right"'>
+  Which side the panel docks to.
+</ResponseField>
+
+<ResponseField name="defaultOpen" type="boolean" default="false">
+  First-visit fallback. If a user has no saved sidebar preference yet and `defaultOpen` is true, the panel opens once. After they interact (open/close), their preference takes over and `defaultOpen` is ignored.
+</ResponseField>
+
+<ResponseField name="showLauncher" type="boolean" default="true">
+  Whether to render the floating launcher button. Set to `false` if you want to wire your own UI to open the panel — see below.
+</ResponseField>
+
+<ResponseField name="eager" type="boolean" default="false">
+  Preload the chat panel's code chunk on mount instead of waiting for the first open. See [Lazy loading](#lazy-loading).
+</ResponseField>
+
+<ResponseField name="style" type="CSSProperties">
+  Passthrough to the layout container (scoped mode only), so you can size it.
+</ResponseField>
+
+<ResponseField name="className" type="string">
+  Passthrough to the layout container (scoped mode only).
+</ResponseField>
+
+## Custom launcher
+
+The built-in launcher is a sparkle button in the bottom corner (viewport-fixed in full-page mode, pinned inside the layout container in scoped mode). To open the panel from your own UI (e.g. a button in your nav bar), disable the built-in launcher and use [`useMantl`](/react/use-mantl):
+
+```tsx
+import { useMantl, MantlLayout } from "@getmantl/react";
+
+function NavBar() {
+  const { openSidebar, isSidebarOpen, isReady } = useMantl();
+  // Hide the button when the SDK can't authenticate, so end-users don't see
+  // an "Ask AI" button that does nothing when clicked.
+  if (!isReady) return null;
+  return (
+    <button onClick={openSidebar} disabled={isSidebarOpen}>
+      Ask AI
+    </button>
+  );
+}
+
+function App() {
+  return (
+    <MantlProvider tokenUrl="/api/token">
+      <MantlLayout showLauncher={false} style={{ height: "100vh" }}>
+        <NavBar />
+        <main>...</main>
+      </MantlLayout>
+    </MantlProvider>
+  );
+}
+```
+
+The provider exposes `openSidebar`, `closeSidebar`, `toggleSidebar`, `isSidebarOpen`, and `isReady` for any custom trigger you need. `openSidebar` is a no-op when the SDK isn't authenticated, but you should still gate your button's visibility on `isReady` so users don't see an unresponsive control.
+
+## Keyboard shortcuts
+
+`MantlLayout` binds two global shortcuts while the SDK is authenticated:
+
+- **⌘K** (Ctrl+K) — toggle the panel
+- **⌘⇧O** (Ctrl+Shift+O) — open the panel and start a new conversation
+
+## Lazy loading
+
+The chat panel and everything it pulls in (markdown rendering, KaTeX, the chat session) is code-split and only loaded when the panel first opens — on most page loads, only the tiny launcher ships. The open animation waits for the chunk so it always plays against real content. Pass `eager` to preload the chunk on mount instead. Once loaded, the panel stays mounted across close/open so chat state survives.
+
+## Resizing
+
+Users can drag the panel's inner edge to resize it between 340px and 700px. The width is persisted per user (as the `sidebar_width` preference), so it survives refreshes and carries across devices.
+
+## What's inside
+
+The panel renders:
+
+- A **header** with the current conversation's title (clickable to open the conversation list dropdown), a "New chat" button, an options menu (rename / delete), and a close button.
+- The **conversation history dropdown**, grouped by Today / Yesterday / Earlier.
+- The **message list** with auto-scroll while the AI is responding.
+- The **input bar** with a stop button while a turn is in progress.
+
+For most apps, you don't need to touch any of this. If you want to build a different UI on top of the same chat state — different layout, different message rendering — see the [hooks reference](/react/use-mantl-chat).
+
+## Behavior notes
+
+- Panel open/closed state is persisted server-side per user as the `sidebar_open` preference, so it carries across devices.
+- The layout hides the panel and launcher entirely if the SDK isn't authenticated (e.g. failed token fetch, expired JWT, revoked key). End-users see nothing; developers see a `console.warn`. See [Authentication](/react/auth-overview) for details.
